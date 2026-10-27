@@ -32,7 +32,7 @@ export default function TechnicalBreakdown() {
     { name: '--primary', hex: '#10b981', desc: 'Nigerian Emerald Green (Primary Action & Branding)', file: 'src/index.css', line: 13, category: 'brand' },
     { name: '--primary-hover', hex: '#059669', desc: 'Hover state for primary emerald buttons', file: 'src/index.css', line: 14, category: 'brand' },
     { name: '--primary-light', hex: 'rgba(16, 185, 129, 0.15)', desc: 'Soft emerald background for badges & alert chips', file: 'src/index.css', line: 15, category: 'brand' },
-    { name: '--accent-gold', hex: '#f59e0b', desc: 'Amber/Gold for Shared Pooled Bank (Ajo Fund)', file: 'src/index.css', line: 18, category: 'brand' },
+    { name: '--accent-gold', hex: '#f59e0b', desc: 'Amber/Gold for Shared Family Pot (Vault)', file: 'src/index.css', line: 18, category: 'brand' },
     { name: '--accent-gold-light', hex: 'rgba(245, 158, 11, 0.15)', desc: 'Soft gold badge and chip background', file: 'src/index.css', line: 19, category: 'brand' },
     { name: '--accent-blue', hex: '#3b82f6', desc: 'Royal blue for contributor role and member flow stats', file: 'src/index.css', line: 20, category: 'brand' },
     { name: '--accent-purple', hex: '#8b5cf6', desc: 'Purple for Financial Reports & Statements', file: 'src/index.css', line: 21, category: 'brand' },
@@ -51,8 +51,8 @@ export default function TechnicalBreakdown() {
     { element: 'Household Tagline', value: '{familyName} • Pooled Family Account', file: 'src/components/Header.jsx', line: 46, desc: 'Header breadcrumb with dynamic family name' },
     { element: 'Currency Identifier', value: '🇳🇬 NGN (₦)', file: 'src/components/Header.jsx', line: 55, desc: 'Nigerian Naira currency flag and symbol badge' },
     { element: 'Auth Modal App Header', value: 'NaijaFamily Pooled Bank', file: 'src/components/AuthModal.jsx', line: '187-192', desc: 'Welcome title on login and registration screens' },
-    { element: 'Auth Modal Subtitle', value: 'Household Financial Planning & Collective Ajo Vaults', file: 'src/components/AuthModal.jsx', line: 191, desc: 'Mission tagline under auth modal logo' },
-    { element: 'Shared Vault Display Name', value: 'Shared Family Pooled Bank Balance (Ajo Fund)', file: 'src/components/PooledFundCard.jsx', line: 118, desc: 'Central banner heading on Ajo pooled fund card' },
+    { element: 'Auth Modal Subtitle', value: 'Household Financial Planning & Collective Shared Vaults', file: 'src/components/AuthModal.jsx', line: 191, desc: 'Mission tagline under auth modal logo' },
+    { element: 'Shared Vault Display Name', value: 'Shared Family Pot Balance', file: 'src/components/PooledFundCard.jsx', line: 118, desc: 'Central banner heading on shared pot card' },
     { element: 'Footer Copyright & Brand', value: 'NaijaFamily Pooled Bank & Family Financial Planner', file: 'src/App.jsx', line: 130, desc: 'Persistent footer notice with Nigerian household context' },
     { element: 'Footer Architecture Stack', value: 'Built with React, Node.js REST Architecture, Chart.js & Nodemailer', file: 'src/App.jsx', line: 133, desc: 'System stack credits in main footer' },
     { element: 'Seed Family Name', value: 'Demo Family', file: 'src/services/db.js', line: 13, desc: 'Initial database seed family profile' },
@@ -64,7 +64,7 @@ export default function TechnicalBreakdown() {
   // Component & Dynamic Status Colors
   const statusColors = [
     { name: 'Button Primary Gradient', code: 'linear-gradient(135deg, #10b981, #059669)', file: 'src/index.css', line: 164, sample: 'button-primary' },
-    { name: 'Button Accent (Ajo) Gradient', code: 'linear-gradient(135deg, #f59e0b, #d97706)', file: 'src/index.css', line: 186, sample: 'button-accent' },
+    { name: 'Button Accent (Shared Vault) Gradient', code: 'linear-gradient(135deg, #f59e0b, #d97706)', file: 'src/index.css', line: 186, sample: 'button-accent' },
     { name: 'Button Danger / Warning', code: 'rgba(244, 63, 94, 0.15) / #f87171', file: 'src/index.css', line: '197-199', sample: 'button-danger' },
     { name: 'Parent Role Badge', code: 'bg: rgba(16, 185, 129, 0.18), text: #10b981', file: 'src/index.css', line: '122-126', sample: 'badge-parent' },
     { name: 'Child Role Badge', code: 'bg: rgba(59, 130, 246, 0.18), text: #60a5fa', file: 'src/index.css', line: '128-132', sample: 'badge-child' },
@@ -96,7 +96,7 @@ export default function TechnicalBreakdown() {
     { table: 'expense_table', line: 50, desc: 'Expenses tagged to category, user, and payment method' },
     { table: 'budgetlimit_table', line: 65, desc: 'Category budget caps for automated SMTP alert threshold checks' },
     { table: 'notification_table', line: 76, desc: 'SMTP email notifications and audit alert logs' },
-    { table: 'pooledfund_table', line: 88, desc: 'Central Ajo vault balance per household' },
+    { table: 'pooledfund_table', line: 88, desc: 'Central Shared Vault balance per household' },
     { table: 'pooltransactions_table', line: 97, desc: 'Audit ledger of pool contributions and parent allocations' },
     { table: 'deposit_account_table', line: 111, desc: 'Linked commercial Nigerian bank accounts for direct pool deposits' },
   ];

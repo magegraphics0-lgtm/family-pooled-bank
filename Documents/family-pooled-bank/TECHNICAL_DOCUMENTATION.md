@@ -5,7 +5,7 @@
 
 ## 1. 🌟 System Overview & Architecture
 
-**NaijaFamily Pooled Bank** is a web application engineered for Nigerian households. It addresses multi-earner family financial coordination, collective savings (*Ajo / Esusu* pooled accounts), budget cap enforcement, and automated email alerts.
+**NaijaFamily Pooled Bank** is a web application engineered for Nigerian households. It addresses multi-earner family financial coordination, collective savings (Family Pot shared vault accounts), budget cap enforcement, and automated email alerts.
 
 ### System Architecture
 The application uses a **Tiered Client-Server Architecture**:
@@ -86,7 +86,7 @@ family-pooled-bank/
 │   │   ├── NotificationDrawer.jsx   --> SMTP email alert drawer & notification status
 │   │   ├── PeriodicReport.jsx       --> Weekly/Monthly reporting & print/export engine
 │   │   ├── PoolTransactionsLog.jsx  --> Audit trail of pooled fund deposits & allocations
-│   │   └── PooledFundCard.jsx       --> Central Ajo Vault card (Deposit & Withdraw controls)
+│   │   └── PooledFundCard.jsx       --> Central Shared Vault card (Deposit & Withdraw controls)
 │   │
 │   ├── services/
 │   │   ├── db.js            --> Client-side Reactive LocalDatabase & REST API syncer
@@ -129,7 +129,7 @@ The authentication layer handles multi-family household management:
 
 ## 5. ⚙️ Core Application Modules & Functional Logic
 
-### A. Pooled Family Vault (*Ajo / Esusu*) ([PooledFundCard.jsx](file:///c:/Users/MAGE/Documents/family-pooled-bank/src/components/PooledFundCard.jsx))
+### A. Pooled Family Vault (Shared Vault) ([PooledFundCard.jsx](file:///c:/Users/MAGE/Documents/family-pooled-bank/src/components/PooledFundCard.jsx))
 * **Function**: Manages shared household reserves in Nigerian Naira (₦).
 * **Contributions**: Any family member can deposit funds into the pool (`db.contributeToPool`).
 * **Allocations**: Parents can approve and allocate funds for house expenses (`db.allocateFromPool`). If pool balance is insufficient, the system prevents overdrafts and throws an alert.

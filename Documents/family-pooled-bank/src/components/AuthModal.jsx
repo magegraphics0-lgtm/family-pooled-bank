@@ -1,31 +1,48 @@
 import React, { useState } from 'react';
 import { 
-  Landmark, 
+  CookingPot, 
   Users, 
   LogIn, 
   Key, 
   Mail, 
   Building, 
-  CheckCircle,
-  ArrowRight,
-  Eye,
-  EyeOff
+  CheckCircle, 
+  ArrowRight, 
+  Eye, 
+  EyeOff, 
+  Sun, 
+  Moon, 
+  Info,
+  ArrowLeft
 } from 'lucide-react';
 import { db } from '../services/db';
 import { SMTPNotificationService } from '../services/smtpService';
 
-export default function AuthModal({ onLoginSuccess }) {
+export default function AuthModal({ 
+  onLoginSuccess, 
+  theme = 'light', 
+  onToggleTheme,
+  initialTab = 'login',
+  onBackToLanding
+}) {
   const existingFamilies = db.getFamilies();
-  const [activeTab, setActiveTab] = useState(existingFamilies.length === 0 ? 'register-family' : 'login'); // 'register-family' | 'login' | 'join-family'
+  const [activeTab, setActiveTab] = useState(initialTab); // 'login' | 'register-family' | 'join-family'
+  const [isForgotPassword, setIsForgotPassword] = useState(false);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  // Form States
+  // Form States - Login
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [showLoginPassword, setShowLoginPassword] = useState(false);
 
-  // Register Family State
+  // Form States - Forgot Password
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotSubmitted, setForgotSubmitted] = useState(false);
+  const [forgotLoading, setForgotLoading] = useState(false);
+
+  // Form States - Register Family
   const [regFamilyName, setRegFamilyName] = useState('');
   const [regFirstName, setRegFirstName] = useState('');
   const [regLastName, setRegLastName] = useState('');
@@ -36,8 +53,8 @@ export default function AuthModal({ onLoginSuccess }) {
   const [showRegConfirmPassword, setShowRegConfirmPassword] = useState(false);
   const [regRole, setRegRole] = useState('parent');
 
-  // Join Family State
-  const [joinFamilyId, setJoinFamilyId] = useState('1');
+  // Form States - Join Family
+  const [joinFamilyId, setJoinFamilyId] = useState(existingFamilies[0]?.family_id?.toString() || '1');
   const [joinFirstName, setJoinFirstName] = useState('');
   const [joinLastName, setJoinLastName] = useState('');
   const [joinEmail, setJoinEmail] = useState('');
@@ -47,9 +64,10 @@ export default function AuthModal({ onLoginSuccess }) {
   const [showJoinConfirmPassword, setShowJoinConfirmPassword] = useState(false);
   const [joinRole, setJoinRole] = useState('child');
 
+  // Handler: Login
   const handleLoginSubmit = (e) => {
     e.preventDefault();
-    if (!loginEmail) {
+    if (!loginEmail.trim()) {
       setError('Please enter your email address.');
       return;
     }
@@ -59,17 +77,66 @@ export default function AuthModal({ onLoginSuccess }) {
     }
     try {
       setError('');
-      const { user, family } = db.loginUser({ email: loginEmail, password: loginPassword });
+      setLoading(true);
+      const { user, family } = db.loginUser({ email: loginEmail.trim(), password: loginPassword });
       setSuccessMsg(`Welcome back, ${user.first_name}!`);
-      setTimeout(() => onLoginSuccess(user, family), 600);
+      setTimeout(() => {
+        setLoading(false);
+        onLoginSuccess(user, family);
+      }, 500);
     } catch (err) {
+      setLoading(false);
       setError(err.message);
     }
   };
 
+  // Quick Demo Login Helper
+  const handleQuickLogin = (email, password) => {
+    setLoginEmail(email);
+    setLoginPassword(password);
+    setError('');
+    try {
+      setLoading(true);
+      const { user, family } = db.loginUser({ email, password });
+      setSuccessMsg(`Welcome back, ${user.first_name}!`);
+      setTimeout(() => {
+        setLoading(false);
+        onLoginSuccess(user, family);
+      }, 400);
+    } catch (err) {
+      setLoading(false);
+      setError(err.message);
+    }
+  };
+
+  // Handler: Forgot Password (Silent Non-Enumeration)
+  const handleForgotPasswordSubmit = async (e) => {
+    e.preventDefault();
+    if (!forgotEmail.trim()) {
+      setError('Please enter your account email address.');
+      return;
+    }
+
+    try {
+      setError('');
+      setForgotLoading(true);
+
+      // Triggers backend POST /api/auth/forgot-password and records local notification
+      await db.requestPasswordReset(forgotEmail.trim());
+
+      setForgotLoading(false);
+      setForgotSubmitted(true);
+    } catch {
+      // Always treat silently on the frontend to prevent email enumeration
+      setForgotLoading(false);
+      setForgotSubmitted(true);
+    }
+  };
+
+  // Handler: Register Family
   const handleRegisterFamilySubmit = (e) => {
     e.preventDefault();
-    if (!regFamilyName || !regFirstName || !regEmail) {
+    if (!regFamilyName.trim() || !regFirstName.trim() || !regEmail.trim()) {
       setError('Family Name, Admin First Name, and Email are required.');
       return;
     }
@@ -82,36 +149,40 @@ export default function AuthModal({ onLoginSuccess }) {
       return;
     }
     if (regPassword !== regConfirmPassword) {
-      setError('Passwords do not match! Please check and confirm your password.');
+      setError('Passwords do not match! Please verify your password confirmation.');
       return;
     }
     try {
       setError('');
+      setLoading(true);
       const { user, family } = db.registerFamily({
-        familyName: regFamilyName,
-        firstName: regFirstName,
-        lastName: regLastName,
-        email: regEmail,
+        familyName: regFamilyName.trim(),
+        firstName: regFirstName.trim(),
+        lastName: regLastName.trim(),
+        email: regEmail.trim(),
         password: regPassword,
         role: regRole,
         avatar: regRole === 'parent' ? '👑' : '🧑‍🎓'
       });
 
-Agent
-
-      // Dispatch Automated Welcome Email via SMTP Notification Service
+      // Dispatch automated welcome notification
       SMTPNotificationService.sendWelcomeEmail(user, family);
 
-      setSuccessMsg(`Family Account "${family.family_name}" created! Welcome email dispatched to ${user.email}.`);
-      setTimeout(() => onLoginSuccess(user, family), 900);
+      setSuccessMsg(`Family Account "${family.family_name}" created! Welcome email dispatched.`);
+      setTimeout(() => {
+        setLoading(false);
+        onLoginSuccess(user, family);
+      }, 700);
     } catch (err) {
+      setLoading(false);
       setError(err.message);
     }
   };
 
+  // Handler: Join Family
   const handleJoinFamilySubmit = (e) => {
     e.preventDefault();
-    if (!joinFirstName || !joinEmail) {
+    if (!joinFirstName.trim() || !joinEmail.trim()) {
       setError('First name and Email are required to join a family.');
       return;
     }
@@ -124,753 +195,1115 @@ Agent
       return;
     }
     if (joinPassword !== joinConfirmPassword) {
-      setError('Passwords do not match! Please check and confirm your password.');
+      setError('Passwords do not match! Please verify your password confirmation.');
       return;
     }
     try {
       setError('');
+      setLoading(true);
       const { user, family } = db.joinFamily({
         familyId: joinFamilyId,
-        firstName: joinFirstName,
-        lastName: joinLastName,
-        email: joinEmail,
+        firstName: joinFirstName.trim(),
+        lastName: joinLastName.trim(),
+        email: joinEmail.trim(),
         password: joinPassword,
         role: joinRole,
-        avatar: joinRole === 'parent' ? '👩‍💼' : '🧑‍🎓'
+        avatar: joinRole === 'parent' ? '🛡️' : '🧑‍🎓'
       });
 
-      // Dispatch Automated Welcome Email via SMTP Notification Service
       SMTPNotificationService.sendWelcomeEmail(user, family);
 
-      setSuccessMsg(`Successfully joined ${family.family_name}! Welcome email dispatched to ${user.email}.`);
-      setTimeout(() => onLoginSuccess(user, family), 900);
+      setSuccessMsg(`Successfully joined ${family.family_name}!`);
+      setTimeout(() => {
+        setLoading(false);
+        onLoginSuccess(user, family);
+      }, 700);
     } catch (err) {
+      setLoading(false);
       setError(err.message);
     }
   };
 
   return (
     <div style={{
-      position: 'fixed',
-      inset: 0,
-      zIndex: 1000,
-      background: 'radial-gradient(circle at 50% 20%, #1e1b4b 0%, #0f172a 70%, #020617 100%)',
+      minHeight: '100vh',
+      background: 'var(--bg-primary)',
       display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '1.5rem',
-      overflowY: 'auto'
+      flexDirection: 'column',
+      justifyContent: 'space-between',
+      color: 'var(--text-main)',
+      transition: 'background-color 0.25s ease, color 0.25s ease',
+      padding: '1.25rem'
     }}>
+      {/* Top Floating Bar */}
       <div style={{
+        maxWidth: '1200px',
         width: '100%',
-        maxWidth: '540px',
-        background: 'rgba(30, 41, 59, 0.85)',
-        backdropFilter: 'blur(20px)',
-        border: '1px solid rgba(255, 255, 255, 0.12)',
-        borderRadius: '24px',
-        padding: '2.25rem',
-        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.6)'
+        margin: '0 auto',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '0.5rem 0'
       }}>
-        {/* App Logo & Header */}
-        <div style={{ textAlign: 'center', marginBottom: '1.75rem' }}>
+        {onBackToLanding ? (
+          <button
+            type="button"
+            onClick={onBackToLanding}
+            className="btn btn-secondary"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.45rem',
+              padding: '0.45rem 0.85rem',
+              fontSize: '0.825rem',
+              fontWeight: 600
+            }}
+          >
+            <ArrowLeft size={16} />
+            <span>Back to Home</span>
+          </button>
+        ) : <div />}
+
+        {onToggleTheme && (
+          <button
+            type="button"
+            onClick={onToggleTheme}
+            className="btn btn-secondary"
+            style={{ padding: '0.45rem 0.75rem', display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.8rem' }}
+            title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}
+            aria-label="Toggle light or dark theme"
+          >
+            {theme === 'dark' ? (
+              <>
+                <Sun size={15} color="#f59e0b" />
+                <span>Light</span>
+              </>
+            ) : (
+              <>
+                <Moon size={15} color="#475569" />
+                <span>Dark</span>
+              </>
+            )}
+          </button>
+        )}
+      </div>
+
+      {/* Centralized Authentication Card */}
+      <div style={{
+        maxWidth: '460px',
+        width: '100%',
+        margin: '1.5rem auto',
+        background: 'var(--bg-secondary)',
+        border: '1px solid var(--border-color)',
+        borderRadius: '24px',
+        padding: '2.25rem 2rem',
+        boxShadow: '0 20px 40px -15px rgba(0, 0, 0, 0.15)',
+        transition: 'background-color 0.25s ease, border-color 0.25s ease'
+      }}>
+        {/* Brand Logo & Header */}
+        <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
           <div style={{
-            width: '60px',
-            height: '60px',
-            margin: '0 auto 1rem auto',
+            width: '54px',
+            height: '54px',
+            margin: '0 auto 0.75rem auto',
             background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
             borderRadius: '16px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            boxShadow: '0 10px 20px rgba(16, 185, 129, 0.3)'
+            color: '#ffffff',
+            boxShadow: '0 8px 18px rgba(16, 185, 129, 0.35)'
           }}>
-            <Landmark size={32} color="#ffffff" />
+            <CookingPot size={28} />
           </div>
-          <h1 style={{ fontSize: '1.65rem', fontWeight: 800, color: '#f8fafc', margin: '0 0 0.35rem 0', fontFamily: 'Outfit, sans-serif' }}>
-            NaijaFamily Pooled Bank
-          </h1>
-          <p style={{ fontSize: '0.875rem', color: '#94a3b8', margin: 0 }}>
-            Household Financial Planning & Collective Ajo Vaults
+
+          <h2 style={{
+            fontSize: '1.65rem',
+            fontWeight: 800,
+            color: 'var(--text-main)',
+            margin: '0 0 0.3rem 0',
+            fontFamily: 'Outfit, sans-serif',
+            letterSpacing: '-0.03em'
+          }}>
+            {isForgotPassword ? 'Reset Password' : 'OnePot'}
+          </h2>
+
+          <p style={{ fontSize: '0.825rem', color: 'var(--text-muted)', margin: 0, lineHeight: 1.4 }}>
+            {isForgotPassword 
+              ? 'Enter your registered email to receive reset instructions'
+              : 'One family, one pot = No stories'
+            }
           </p>
         </div>
 
-        {/* Tab Switcher */}
+        {/* Academic Mock Ledger Notice Pill */}
         <div style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr 1fr',
-          gap: '0.35rem',
-          background: 'rgba(15, 23, 42, 0.6)',
-          padding: '0.35rem',
-          borderRadius: '14px',
-          border: '1px solid rgba(255, 255, 255, 0.05)',
-          marginBottom: '1.5rem'
+          background: 'var(--primary-light)',
+          border: '1px solid var(--primary-border)',
+          borderRadius: '10px',
+          padding: '0.45rem 0.75rem',
+          marginBottom: '1.25rem',
+          fontSize: '0.725rem',
+          color: 'var(--text-muted)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.45rem',
+          lineHeight: 1.3
         }}>
-          <button
-            onClick={() => { setActiveTab('login'); setError(''); setSuccessMsg(''); }}
-            style={{
-              padding: '0.65rem 0.5rem',
-              borderRadius: '10px',
-              border: 'none',
-              background: activeTab === 'login' ? '#10b981' : 'transparent',
-              color: activeTab === 'login' ? '#ffffff' : '#94a3b8',
-              fontWeight: 600,
-              fontSize: '0.8rem',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '0.35rem',
-              transition: 'all 0.2s ease'
-            }}
-          >
-            <LogIn size={15} /> Login
-          </button>
-          <button
-            onClick={() => { setActiveTab('register-family'); setError(''); setSuccessMsg(''); }}
-            style={{
-              padding: '0.65rem 0.5rem',
-              borderRadius: '10px',
-              border: 'none',
-              background: activeTab === 'register-family' ? '#10b981' : 'transparent',
-              color: activeTab === 'register-family' ? '#ffffff' : '#94a3b8',
-              fontWeight: 600,
-              fontSize: '0.8rem',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '0.35rem',
-              transition: 'all 0.2s ease'
-            }}
-          >
-            <Building size={15} /> New Family
-          </button>
-          <button
-            onClick={() => { setActiveTab('join-family'); setError(''); setSuccessMsg(''); }}
-            style={{
-              padding: '0.65rem 0.5rem',
-              borderRadius: '10px',
-              border: 'none',
-              background: activeTab === 'join-family' ? '#10b981' : 'transparent',
-              color: activeTab === 'join-family' ? '#ffffff' : '#94a3b8',
-              fontWeight: 600,
-              fontSize: '0.8rem',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '0.35rem',
-              transition: 'all 0.2s ease'
-            }}
-          >
-            <Users size={15} /> Join Pool
-          </button>
+          <Info size={14} color="var(--primary)" style={{ flexShrink: 0 }} />
+          <span>
+            Closed-loop mock ledger. Real fund movement simulated via Paystack sandbox API.
+          </span>
         </div>
 
-        {/* Error or Success Alert */}
+        {/* Error and Success Alerts */}
         {error && (
-          <div style={{ background: 'rgba(244, 63, 94, 0.15)', border: '1px solid rgba(244, 63, 94, 0.3)', color: '#fb7185', padding: '0.75rem 1rem', borderRadius: '12px', fontSize: '0.825rem', marginBottom: '1.25rem' }}>
+          <div style={{
+            background: 'rgba(244, 63, 94, 0.12)',
+            border: '1px solid rgba(244, 63, 94, 0.25)',
+            color: '#f43f5e',
+            padding: '0.65rem 0.85rem',
+            borderRadius: '10px',
+            fontSize: '0.8rem',
+            marginBottom: '1.25rem',
+            lineHeight: 1.4
+          }}>
             ⚠️ {error}
           </div>
         )}
+
         {successMsg && (
-          <div style={{ background: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.3)', color: '#34d399', padding: '0.75rem 1rem', borderRadius: '12px', fontSize: '0.825rem', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <CheckCircle size={16} /> {successMsg}
+          <div style={{
+            background: 'rgba(16, 185, 129, 0.12)',
+            border: '1px solid rgba(16, 185, 129, 0.25)',
+            color: '#10b981',
+            padding: '0.65rem 0.85rem',
+            borderRadius: '10px',
+            fontSize: '0.8rem',
+            marginBottom: '1.25rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.45rem'
+          }}>
+            <CheckCircle size={15} />
+            <span>{successMsg}</span>
           </div>
         )}
 
-        {/* TAB 1: LOGIN FORM */}
-        {activeTab === 'login' && (
+        {/* VIEW 1: FORGOT PASSWORD SCREEN */}
+        {isForgotPassword ? (
           <div>
-            <form onSubmit={handleLoginSubmit}>
-              <div style={{ marginBottom: '1rem' }}>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#cbd5e1', marginBottom: '0.35rem' }}>
-                  Account Email Address
-                </label>
-                <div style={{ position: 'relative' }}>
-                  <Mail size={16} color="#64748b" style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)' }} />
-                  <input
-                    type="email"
-                    placeholder="emeka.okafor@gov.ng"
-                    value={loginEmail}
-                    onChange={(e) => setLoginEmail(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '0.75rem 1rem 0.75rem 2.6rem',
-                      background: 'rgba(15, 23, 42, 0.6)',
-                      border: '1px solid rgba(255, 255, 255, 0.1)',
-                      borderRadius: '12px',
-                      color: '#f8fafc',
-                      fontSize: '0.9rem',
-                      outline: 'none'
-                    }}
-                  />
+            {!forgotSubmitted ? (
+              <form onSubmit={handleForgotPasswordSubmit}>
+                <div style={{ marginBottom: '1.25rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '0.35rem' }}>
+                    Registered Email Address
+                  </label>
+                  <div style={{ position: 'relative' }}>
+                    <Mail size={16} style={{ position: 'absolute', left: '0.9rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                    <input
+                      type="email"
+                      required
+                      placeholder="e.g. emeka.okafor@gov.ng"
+                      value={forgotEmail}
+                      onChange={(e) => setForgotEmail(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '0.75rem 1rem 0.75rem 2.5rem',
+                        background: 'var(--bg-primary)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '12px',
+                        color: 'var(--text-main)',
+                        fontSize: '0.9rem',
+                        outline: 'none',
+                        transition: 'border-color 0.15s ease'
+                      }}
+                    />
+                  </div>
                 </div>
-              </div>
 
-              <div style={{ marginBottom: '1.25rem' }}>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#cbd5e1', marginBottom: '0.35rem' }}>
-                  Password
-                </label>
-                <div style={{ position: 'relative' }}>
-                  <Key size={16} color="#64748b" style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)' }} />
-                  <input
-                    type={showLoginPassword ? 'text' : 'password'}
-                    placeholder="••••••••"
-                    value={loginPassword}
-                    onChange={(e) => setLoginPassword(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '0.75rem 2.5rem 0.75rem 2.6rem',
-                      background: 'rgba(15, 23, 42, 0.6)',
-                      border: '1px solid rgba(255, 255, 255, 0.1)',
-                      borderRadius: '12px',
-                      color: '#f8fafc',
-                      fontSize: '0.9rem',
-                      outline: 'none'
-                    }}
-                  />
+                <button
+                  type="submit"
+                  disabled={forgotLoading}
+                  style={{
+                    width: '100%',
+                    padding: '0.8rem',
+                    borderRadius: '12px',
+                    border: 'none',
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    color: '#ffffff',
+                    fontWeight: 700,
+                    fontSize: '0.925rem',
+                    cursor: forgotLoading ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.5rem',
+                    boxShadow: '0 6px 16px rgba(16, 185, 129, 0.3)',
+                    marginBottom: '1rem',
+                    opacity: forgotLoading ? 0.75 : 1
+                  }}
+                >
+                  {forgotLoading ? 'Sending Instructions...' : 'Send Reset Instructions'}
+                  {!forgotLoading && <ArrowRight size={16} />}
+                </button>
+
+                <div style={{ textAlign: 'center' }}>
                   <button
                     type="button"
-                    onClick={() => setShowLoginPassword(!showLoginPassword)}
+                    onClick={() => {
+                      setIsForgotPassword(false);
+                      setError('');
+                    }}
                     style={{
-                      position: 'absolute',
-                      right: '0.8rem',
-                      top: '50%',
-                      transform: 'translateY(-50%)',
                       background: 'none',
                       border: 'none',
-                      color: '#64748b',
+                      color: 'var(--text-muted)',
+                      fontSize: '0.825rem',
+                      fontWeight: 600,
                       cursor: 'pointer',
-                      display: 'flex',
+                      display: 'inline-flex',
                       alignItems: 'center',
-                      padding: 0
+                      gap: '0.35rem'
                     }}
                   >
-                    {showLoginPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    <ArrowLeft size={14} />
+                    <span>Back to Sign In</span>
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div style={{ textAlign: 'center', padding: '0.5rem 0' }}>
+                <div style={{
+                  width: '56px',
+                  height: '56px',
+                  borderRadius: '50%',
+                  background: 'rgba(16, 185, 129, 0.15)',
+                  color: 'var(--primary)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  margin: '0 auto 1rem auto'
+                }}>
+                  <CheckCircle size={32} />
+                </div>
+
+                <h3 style={{ fontSize: '1.25rem', fontWeight: 800, margin: '0 0 0.5rem 0', color: 'var(--text-main)' }}>
+                  Check Your Inbox
+                </h3>
+
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: 1.5, marginBottom: '1.5rem' }}>
+                  If an account exists for <strong style={{ color: 'var(--text-main)' }}>{forgotEmail}</strong>, password reset instructions and a 6-digit OTP code have been sent. Please check your inbox and spam folder.
+                </p>
+
+                <div style={{
+                  background: 'var(--bg-primary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '12px',
+                  padding: '0.85rem',
+                  fontSize: '0.775rem',
+                  color: 'var(--text-subtle)',
+                  marginBottom: '1.5rem',
+                  textAlign: 'left'
+                }}>
+                  🔒 <em>Security notice: To protect household privacy, OnePot never confirms whether an email is registered or unregistered.</em>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsForgotPassword(false);
+                      setForgotSubmitted(false);
+                      setError('');
+                    }}
+                    className="btn btn-primary"
+                    style={{ width: '100%', padding: '0.75rem', fontSize: '0.875rem', fontWeight: 700 }}
+                  >
+                    Return to Sign In
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setForgotSubmitted(false)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--text-muted)',
+                      fontSize: '0.8rem',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Send to a different email
                   </button>
                 </div>
               </div>
-
+            )}
+          </div>
+        ) : (
+          /* VIEW 2: AUTH TABS (SIGN IN / NEW FAMILY / JOIN FAMILY) */
+          <div>
+            {/* Segmented Tab Control */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr 1fr',
+              gap: '0.25rem',
+              background: 'var(--bg-primary)',
+              padding: '0.3rem',
+              borderRadius: '12px',
+              border: '1px solid var(--border-color)',
+              marginBottom: '1.5rem'
+            }}>
               <button
-                type="submit"
+                type="button"
+                onClick={() => { setActiveTab('login'); setError(''); setSuccessMsg(''); }}
                 style={{
-                  width: '100%',
-                  padding: '0.85rem',
-                  borderRadius: '12px',
+                  padding: '0.55rem 0.35rem',
+                  borderRadius: '9px',
                   border: 'none',
-                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                  color: '#ffffff',
+                  background: activeTab === 'login' ? 'var(--primary)' : 'transparent',
+                  color: activeTab === 'login' ? '#ffffff' : 'var(--text-muted)',
                   fontWeight: 700,
-                  fontSize: '0.95rem',
+                  fontSize: '0.775rem',
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  gap: '0.5rem',
-                  boxShadow: '0 8px 16px rgba(16, 185, 129, 0.25)',
-                  marginBottom: '1.5rem'
+                  gap: '0.3rem',
+                  transition: 'all 0.15s ease'
                 }}
               >
-                Log In to Household Account <ArrowRight size={16} />
+                <LogIn size={13} />
+                <span>Sign In</span>
               </button>
-            </form>
+
+              <button
+                type="button"
+                onClick={() => { setActiveTab('register-family'); setError(''); setSuccessMsg(''); }}
+                style={{
+                  padding: '0.55rem 0.35rem',
+                  borderRadius: '9px',
+                  border: 'none',
+                  background: activeTab === 'register-family' ? 'var(--primary)' : 'transparent',
+                  color: activeTab === 'register-family' ? '#ffffff' : 'var(--text-muted)',
+                  fontWeight: 700,
+                  fontSize: '0.775rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.3rem',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <Building size={13} />
+                <span>New Family</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setActiveTab('join-family'); setError(''); setSuccessMsg(''); }}
+                style={{
+                  padding: '0.55rem 0.35rem',
+                  borderRadius: '9px',
+                  border: 'none',
+                  background: activeTab === 'join-family' ? 'var(--primary)' : 'transparent',
+                  color: activeTab === 'join-family' ? '#ffffff' : 'var(--text-muted)',
+                  fontWeight: 700,
+                  fontSize: '0.775rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.3rem',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <Users size={13} />
+                <span>Join Pool</span>
+              </button>
+            </div>
+
+            {/* TAB: LOGIN */}
+            {activeTab === 'login' && (
+              <div>
+                <form onSubmit={handleLoginSubmit}>
+                  {/* Email Field */}
+                  <div style={{ marginBottom: '1rem' }}>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '0.35rem' }}>
+                      Account Email Address
+                    </label>
+                    <div style={{ position: 'relative' }}>
+                      <Mail size={16} style={{ position: 'absolute', left: '0.9rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                      <input
+                        type="email"
+                        required
+                        placeholder="emeka.okafor@gov.ng"
+                        value={loginEmail}
+                        onChange={(e) => setLoginEmail(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '0.75rem 1rem 0.75rem 2.5rem',
+                          background: 'var(--bg-primary)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '12px',
+                          color: 'var(--text-main)',
+                          fontSize: '0.9rem',
+                          outline: 'none',
+                          transition: 'border-color 0.15s ease'
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Password Field */}
+                  <div style={{ marginBottom: '0.5rem' }}>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '0.35rem' }}>
+                      Password
+                    </label>
+                    <div style={{ position: 'relative' }}>
+                      <Key size={16} style={{ position: 'absolute', left: '0.9rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                      <input
+                        type={showLoginPassword ? 'text' : 'password'}
+                        required
+                        placeholder="••••••••"
+                        value={loginPassword}
+                        onChange={(e) => setLoginPassword(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '0.75rem 2.5rem 0.75rem 2.5rem',
+                          background: 'var(--bg-primary)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '12px',
+                          color: 'var(--text-main)',
+                          fontSize: '0.9rem',
+                          outline: 'none',
+                          transition: 'border-color 0.15s ease'
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowLoginPassword(!showLoginPassword)}
+                        style={{
+                          position: 'absolute',
+                          right: '0.75rem',
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--text-muted)',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          padding: 0
+                        }}
+                      >
+                        {showLoginPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Unobtrusive Forgot Password Link */}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1.25rem' }}>
+                    <button
+                      type="button"
+                      id="forgot-password-link"
+                      onClick={() => {
+                        setIsForgotPassword(true);
+                        setForgotEmail(loginEmail || '');
+                        setError('');
+                        setSuccessMsg('');
+                      }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--primary)',
+                        fontSize: '0.8rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        padding: '0.15rem 0',
+                        textDecoration: 'none'
+                      }}
+                      onMouseOver={(e) => (e.currentTarget.style.textDecoration = 'underline')}
+                      onMouseOut={(e) => (e.currentTarget.style.textDecoration = 'none')}
+                    >
+                      Forgot Password?
+                    </button>
+                  </div>
+
+                  {/* Submit Button */}
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    style={{
+                      width: '100%',
+                      padding: '0.85rem',
+                      borderRadius: '12px',
+                      border: 'none',
+                      background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                      color: '#ffffff',
+                      fontWeight: 700,
+                      fontSize: '0.95rem',
+                      cursor: loading ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '0.5rem',
+                      boxShadow: '0 8px 18px rgba(16, 185, 129, 0.3)',
+                      marginBottom: '1.5rem',
+                      opacity: loading ? 0.75 : 1
+                    }}
+                  >
+                    <span>{loading ? 'Authenticating...' : 'Sign In to Pot'}</span>
+                    {!loading && <ArrowRight size={16} />}
+                  </button>
+                </form>
+
+                {/* Quick 1-Click Demo Profiles */}
+                <div style={{
+                  borderTop: '1px solid var(--border-color)',
+                  paddingTop: '1rem',
+                  textAlign: 'center'
+                }}>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Quick Demo Credentials (Isolated Accounts)
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                    <button
+                      type="button"
+                      onClick={() => handleQuickLogin('parent@onepot.app', 'ParentPassword123!')}
+                      style={{
+                        padding: '0.5rem 0.65rem',
+                        background: 'var(--bg-primary)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '10px',
+                        fontSize: '0.775rem',
+                        fontWeight: 600,
+                        color: 'var(--text-main)',
+                        cursor: 'pointer',
+                        textAlign: 'left'
+                      }}
+                    >
+                      <div>👑 Demo Parent</div>
+                      <div style={{ fontSize: '0.675rem', color: 'var(--primary)' }}>parent@onepot.app</div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleQuickLogin('child@onepot.app', 'ChildPassword123!')}
+                      style={{
+                        padding: '0.5rem 0.65rem',
+                        background: 'var(--bg-primary)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '10px',
+                        fontSize: '0.775rem',
+                        fontWeight: 600,
+                        color: 'var(--text-main)',
+                        cursor: 'pointer',
+                        textAlign: 'left'
+                      }}
+                    >
+                      <div>🧑‍🎓 Demo Child</div>
+                      <div style={{ fontSize: '0.675rem', color: 'var(--accent-blue)' }}>child@onepot.app</div>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB: REGISTER NEW FAMILY */}
+            {activeTab === 'register-family' && (
+              <form onSubmit={handleRegisterFamilySubmit}>
+                <div style={{ marginBottom: '0.85rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '0.35rem' }}>
+                    Family / Household Name
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. The Adeleke Household"
+                    value={regFamilyName}
+                    onChange={(e) => setRegFamilyName(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '0.7rem 0.85rem',
+                      background: 'var(--bg-primary)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '10px',
+                      color: 'var(--text-main)',
+                      fontSize: '0.875rem',
+                      outline: 'none'
+                    }}
+                  />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem', marginBottom: '0.85rem' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '0.35rem' }}>
+                      Admin First Name
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Babatunde"
+                      value={regFirstName}
+                      onChange={(e) => setRegFirstName(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '0.7rem 0.85rem',
+                        background: 'var(--bg-primary)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '10px',
+                        color: 'var(--text-main)',
+                        fontSize: '0.875rem',
+                        outline: 'none'
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '0.35rem' }}>
+                      Last Name
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Adeleke"
+                      value={regLastName}
+                      onChange={(e) => setRegLastName(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '0.7rem 0.85rem',
+                        background: 'var(--bg-primary)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '10px',
+                        color: 'var(--text-main)',
+                        fontSize: '0.875rem',
+                        outline: 'none'
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: '0.85rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '0.35rem' }}>
+                    Admin Email Address
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="babatunde@adeleke.org.ng"
+                    value={regEmail}
+                    onChange={(e) => setRegEmail(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '0.7rem 0.85rem',
+                      background: 'var(--bg-primary)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '10px',
+                      color: 'var(--text-main)',
+                      fontSize: '0.875rem',
+                      outline: 'none'
+                    }}
+                  />
+                </div>
+
+                {/* Password & Confirm */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem', marginBottom: '0.5rem' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '0.35rem' }}>
+                      Password
+                    </label>
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        type={showRegPassword ? 'text' : 'password'}
+                        required
+                        placeholder="Min 6 chars"
+                        value={regPassword}
+                        onChange={(e) => setRegPassword(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '0.7rem 2rem 0.7rem 0.85rem',
+                          background: 'var(--bg-primary)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '10px',
+                          color: 'var(--text-main)',
+                          fontSize: '0.875rem',
+                          outline: 'none'
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowRegPassword(!showRegPassword)}
+                        style={{
+                          position: 'absolute',
+                          right: '0.5rem',
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--text-muted)',
+                          cursor: 'pointer',
+                          padding: 0
+                        }}
+                      >
+                        {showRegPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '0.35rem' }}>
+                      Confirm
+                    </label>
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        type={showRegConfirmPassword ? 'text' : 'password'}
+                        required
+                        placeholder="Re-enter"
+                        value={regConfirmPassword}
+                        onChange={(e) => setRegConfirmPassword(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '0.7rem 2rem 0.7rem 0.85rem',
+                          background: 'var(--bg-primary)',
+                          border: regConfirmPassword && regPassword !== regConfirmPassword ? '1px solid #f43f5e' : '1px solid var(--border-color)',
+                          borderRadius: '10px',
+                          color: 'var(--text-main)',
+                          fontSize: '0.875rem',
+                          outline: 'none'
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowRegConfirmPassword(!showRegConfirmPassword)}
+                        style={{
+                          position: 'absolute',
+                          right: '0.5rem',
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--text-muted)',
+                          cursor: 'pointer',
+                          padding: 0
+                        }}
+                      >
+                        {showRegConfirmPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Password match indicator */}
+                {regConfirmPassword && (
+                  <div style={{
+                    fontSize: '0.725rem',
+                    marginBottom: '0.85rem',
+                    color: regPassword === regConfirmPassword ? '#10b981' : '#f43f5e',
+                    fontWeight: 600
+                  }}>
+                    {regPassword === regConfirmPassword ? '✓ Passwords match' : '✕ Passwords do not match'}
+                  </div>
+                )}
+
+                <div style={{ marginBottom: '1.25rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '0.35rem' }}>
+                    Family Role
+                  </label>
+                  <select
+                    value={regRole}
+                    onChange={(e) => setRegRole(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '0.7rem 0.85rem',
+                      background: 'var(--bg-primary)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '10px',
+                      color: 'var(--text-main)',
+                      fontSize: '0.875rem',
+                      outline: 'none'
+                    }}
+                  >
+                    <option value="parent">Parent / Head of Household (Full Rights)</option>
+                    <option value="child">Child / Dependent (Contributor)</option>
+                  </select>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  style={{
+                    width: '100%',
+                    padding: '0.85rem',
+                    borderRadius: '12px',
+                    border: 'none',
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    color: '#ffffff',
+                    fontWeight: 700,
+                    fontSize: '0.925rem',
+                    cursor: loading ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.5rem',
+                    boxShadow: '0 8px 18px rgba(16, 185, 129, 0.3)',
+                    opacity: loading ? 0.75 : 1
+                  }}
+                >
+                  <span>{loading ? 'Creating Account...' : 'Create Family & Start Pot'}</span>
+                  {!loading && <ArrowRight size={16} />}
+                </button>
+              </form>
+            )}
+
+            {/* TAB: JOIN EXISTING FAMILY */}
+            {activeTab === 'join-family' && (
+              <form onSubmit={handleJoinFamilySubmit}>
+                <div style={{ marginBottom: '0.85rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '0.35rem' }}>
+                    Select Family Pot to Join
+                  </label>
+                  <select
+                    value={joinFamilyId}
+                    onChange={(e) => setJoinFamilyId(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '0.7rem 0.85rem',
+                      background: 'var(--bg-primary)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '10px',
+                      color: 'var(--text-main)',
+                      fontSize: '0.875rem',
+                      outline: 'none'
+                    }}
+                  >
+                    {existingFamilies.map(f => (
+                      <option key={f.family_id} value={f.family_id}>
+                        {f.family_name} (ID #{f.family_id})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem', marginBottom: '0.85rem' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '0.35rem' }}>
+                      First Name
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Chidimma"
+                      value={joinFirstName}
+                      onChange={(e) => setJoinFirstName(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '0.7rem 0.85rem',
+                        background: 'var(--bg-primary)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '10px',
+                        color: 'var(--text-main)',
+                        fontSize: '0.875rem',
+                        outline: 'none'
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '0.35rem' }}>
+                      Last Name
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Okafor"
+                      value={joinLastName}
+                      onChange={(e) => setJoinLastName(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '0.7rem 0.85rem',
+                        background: 'var(--bg-primary)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '10px',
+                        color: 'var(--text-main)',
+                        fontSize: '0.875rem',
+                        outline: 'none'
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: '0.85rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '0.35rem' }}>
+                    Email Address
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="chidimma.okafor@gmail.com"
+                    value={joinEmail}
+                    onChange={(e) => setJoinEmail(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '0.7rem 0.85rem',
+                      background: 'var(--bg-primary)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '10px',
+                      color: 'var(--text-main)',
+                      fontSize: '0.875rem',
+                      outline: 'none'
+                    }}
+                  />
+                </div>
+
+                {/* Password & Confirm */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem', marginBottom: '0.5rem' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '0.35rem' }}>
+                      Password
+                    </label>
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        type={showJoinPassword ? 'text' : 'password'}
+                        required
+                        placeholder="Min 6 chars"
+                        value={joinPassword}
+                        onChange={(e) => setJoinPassword(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '0.7rem 2rem 0.7rem 0.85rem',
+                          background: 'var(--bg-primary)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '10px',
+                          color: 'var(--text-main)',
+                          fontSize: '0.875rem',
+                          outline: 'none'
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowJoinPassword(!showJoinPassword)}
+                        style={{
+                          position: 'absolute',
+                          right: '0.5rem',
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--text-muted)',
+                          cursor: 'pointer',
+                          padding: 0
+                        }}
+                      >
+                        {showJoinPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '0.35rem' }}>
+                      Confirm
+                    </label>
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        type={showJoinConfirmPassword ? 'text' : 'password'}
+                        required
+                        placeholder="Re-enter"
+                        value={joinConfirmPassword}
+                        onChange={(e) => setJoinConfirmPassword(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '0.7rem 2rem 0.7rem 0.85rem',
+                          background: 'var(--bg-primary)',
+                          border: joinConfirmPassword && joinPassword !== joinConfirmPassword ? '1px solid #f43f5e' : '1px solid var(--border-color)',
+                          borderRadius: '10px',
+                          color: 'var(--text-main)',
+                          fontSize: '0.875rem',
+                          outline: 'none'
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowJoinConfirmPassword(!showJoinConfirmPassword)}
+                        style={{
+                          position: 'absolute',
+                          right: '0.5rem',
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--text-muted)',
+                          cursor: 'pointer',
+                          padding: 0
+                        }}
+                      >
+                        {showJoinConfirmPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Password match indicator */}
+                {joinConfirmPassword && (
+                  <div style={{
+                    fontSize: '0.725rem',
+                    marginBottom: '0.85rem',
+                    color: joinPassword === joinConfirmPassword ? '#10b981' : '#f43f5e',
+                    fontWeight: 600
+                  }}>
+                    {joinPassword === joinConfirmPassword ? '✓ Passwords match' : '✕ Passwords do not match'}
+                  </div>
+                )}
+
+                <div style={{ marginBottom: '1.25rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '0.35rem' }}>
+                    Member Role
+                  </label>
+                  <select
+                    value={joinRole}
+                    onChange={(e) => setJoinRole(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '0.7rem 0.85rem',
+                      background: 'var(--bg-primary)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '10px',
+                      color: 'var(--text-main)',
+                      fontSize: '0.875rem',
+                      outline: 'none'
+                    }}
+                  >
+                    <option value="child">Child / Dependent (Contributor)</option>
+                    <option value="parent">Parent / Co-Manager</option>
+                  </select>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  style={{
+                    width: '100%',
+                    padding: '0.85rem',
+                    borderRadius: '12px',
+                    border: 'none',
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    color: '#ffffff',
+                    fontWeight: 700,
+                    fontSize: '0.925rem',
+                    cursor: loading ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.5rem',
+                    boxShadow: '0 8px 18px rgba(16, 185, 129, 0.3)',
+                    opacity: loading ? 0.75 : 1
+                  }}
+                >
+                  <span>{loading ? 'Joining Family...' : 'Join Family Account'}</span>
+                  {!loading && <ArrowRight size={16} />}
+                </button>
+              </form>
+            )}
           </div>
         )}
+      </div>
 
-        {/* TAB 2: REGISTER NEW FAMILY ACCOUNT */}
-        {activeTab === 'register-family' && (
-          <form onSubmit={handleRegisterFamilySubmit}>
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#cbd5e1', marginBottom: '0.35rem' }}>
-                Family / Household Name
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. The Adeleke Household"
-                value={regFamilyName}
-                onChange={(e) => setRegFamilyName(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '0.75rem 1rem',
-                  background: 'rgba(15, 23, 42, 0.6)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  borderRadius: '12px',
-                  color: '#f8fafc',
-                  fontSize: '0.9rem',
-                  outline: 'none'
-                }}
-              />
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1rem' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#cbd5e1', marginBottom: '0.35rem' }}>
-                  Admin First Name
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Babatunde"
-                  value={regFirstName}
-                  onChange={(e) => setRegFirstName(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '0.75rem 1rem',
-                    background: 'rgba(15, 23, 42, 0.6)',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                    borderRadius: '12px',
-                    color: '#f8fafc',
-                    fontSize: '0.9rem',
-                    outline: 'none'
-                  }}
-                />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#cbd5e1', marginBottom: '0.35rem' }}>
-                  Last Name
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Adeleke"
-                  value={regLastName}
-                  onChange={(e) => setRegLastName(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '0.75rem 1rem',
-                    background: 'rgba(15, 23, 42, 0.6)',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                    borderRadius: '12px',
-                    color: '#f8fafc',
-                    fontSize: '0.9rem',
-                    outline: 'none'
-                  }}
-                />
-              </div>
-            </div>
-
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#cbd5e1', marginBottom: '0.35rem' }}>
-                Admin Email Address
-              </label>
-              <input
-                type="email"
-                placeholder="babatunde@adeleke.org.ng"
-                value={regEmail}
-                onChange={(e) => setRegEmail(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '0.75rem 1rem',
-                  background: 'rgba(15, 23, 42, 0.6)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  borderRadius: '12px',
-                  color: '#f8fafc',
-                  fontSize: '0.9rem',
-                  outline: 'none'
-                }}
-              />
-            </div>
-
-            {/* PASSWORD & CONFIRM PASSWORD FIELDS */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1rem' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#cbd5e1', marginBottom: '0.35rem' }}>
-                  Create Password
-                </label>
-                <div style={{ position: 'relative' }}>
-                  <input
-                    type={showRegPassword ? 'text' : 'password'}
-                    placeholder="Min 6 chars"
-                    value={regPassword}
-                    onChange={(e) => setRegPassword(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '0.75rem 2.2rem 0.75rem 0.85rem',
-                      background: 'rgba(15, 23, 42, 0.6)',
-                      border: '1px solid rgba(255, 255, 255, 0.1)',
-                      borderRadius: '12px',
-                      color: '#f8fafc',
-                      fontSize: '0.9rem',
-                      outline: 'none'
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowRegPassword(!showRegPassword)}
-                    style={{
-                      position: 'absolute',
-                      right: '0.6rem',
-                      top: '50%',
-                      transform: 'translateY(-50%)',
-                      background: 'none',
-                      border: 'none',
-                      color: '#64748b',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      padding: 0
-                    }}
-                  >
-                    {showRegPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#cbd5e1', marginBottom: '0.35rem' }}>
-                  Confirm Password
-                </label>
-                <div style={{ position: 'relative' }}>
-                  <input
-                    type={showRegConfirmPassword ? 'text' : 'password'}
-                    placeholder="Re-enter password"
-                    value={regConfirmPassword}
-                    onChange={(e) => setRegConfirmPassword(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '0.75rem 2.2rem 0.75rem 0.85rem',
-                      background: 'rgba(15, 23, 42, 0.6)',
-                      border: regConfirmPassword && regPassword !== regConfirmPassword ? '1px solid #f43f5e' : '1px solid rgba(255, 255, 255, 0.1)',
-                      borderRadius: '12px',
-                      color: '#f8fafc',
-                      fontSize: '0.9rem',
-                      outline: 'none'
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowRegConfirmPassword(!showRegConfirmPassword)}
-                    style={{
-                      position: 'absolute',
-                      right: '0.6rem',
-                      top: '50%',
-                      transform: 'translateY(-50%)',
-                      background: 'none',
-                      border: 'none',
-                      color: '#64748b',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      padding: 0
-                    }}
-                  >
-                    {showRegConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Live Password Match Indicator */}
-            {regConfirmPassword && (
-              <div style={{
-                fontSize: '0.75rem',
-                marginBottom: '1rem',
-                color: regPassword === regConfirmPassword ? '#34d399' : '#fb7185',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.35rem'
-              }}>
-                {regPassword === regConfirmPassword ? (
-                  <>✓ Passwords match</>
-                ) : (
-                  <>✕ Passwords do not match</>
-                )}
-              </div>
-            )}
-
-            <div style={{ marginBottom: '1.5rem' }}>
-              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#cbd5e1', marginBottom: '0.35rem' }}>
-                Family Role
-              </label>
-              <select
-                value={regRole}
-                onChange={(e) => setRegRole(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '0.75rem 1rem',
-                  background: 'rgba(15, 23, 42, 0.6)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  borderRadius: '12px',
-                  color: '#f8fafc',
-                  fontSize: '0.9rem',
-                  outline: 'none'
-                }}
-              >
-                <option value="parent">Parent / Head of Household (Admin Manager)</option>
-                <option value="child">Child / Dependent (Contributor)</option>
-              </select>
-            </div>
-
-            <button
-              type="submit"
-              style={{
-                width: '100%',
-                padding: '0.85rem',
-                borderRadius: '12px',
-                border: 'none',
-                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                color: '#ffffff',
-                fontWeight: 700,
-                fontSize: '0.95rem',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '0.5rem',
-                boxShadow: '0 8px 16px rgba(16, 185, 129, 0.25)'
-              }}
-            >
-              Create Family & Start Pooled Vault <ArrowRight size={16} />
-            </button>
-          </form>
-        )}
-
-        {/* TAB 3: JOIN EXISTING FAMILY ACCOUNT */}
-        {activeTab === 'join-family' && (
-          <form onSubmit={handleJoinFamilySubmit}>
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#cbd5e1', marginBottom: '0.35rem' }}>
-                Select Family Account to Join
-              </label>
-              <select
-                value={joinFamilyId}
-                onChange={(e) => setJoinFamilyId(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '0.75rem 1rem',
-                  background: 'rgba(15, 23, 42, 0.6)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  borderRadius: '12px',
-                  color: '#f8fafc',
-                  fontSize: '0.9rem',
-                  outline: 'none'
-                }}
-              >
-                {existingFamilies.map(f => (
-                  <option key={f.family_id} value={f.family_id}>
-                    {f.family_name} (ID #{f.family_id})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1rem' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#cbd5e1', marginBottom: '0.35rem' }}>
-                  First Name
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Chidimma"
-                  value={joinFirstName}
-                  onChange={(e) => setJoinFirstName(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '0.75rem 1rem',
-                    background: 'rgba(15, 23, 42, 0.6)',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                    borderRadius: '12px',
-                    color: '#f8fafc',
-                    fontSize: '0.9rem',
-                    outline: 'none'
-                  }}
-                />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#cbd5e1', marginBottom: '0.35rem' }}>
-                  Last Name
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Okafor"
-                  value={joinLastName}
-                  onChange={(e) => setJoinLastName(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '0.75rem 1rem',
-                    background: 'rgba(15, 23, 42, 0.6)',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                    borderRadius: '12px',
-                    color: '#f8fafc',
-                    fontSize: '0.9rem',
-                    outline: 'none'
-                  }}
-                />
-              </div>
-            </div>
-
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#cbd5e1', marginBottom: '0.35rem' }}>
-                Email Address
-              </label>
-              <input
-                type="email"
-                placeholder="chidimma.okafor@gmail.com"
-                value={joinEmail}
-                onChange={(e) => setJoinEmail(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '0.75rem 1rem',
-                  background: 'rgba(15, 23, 42, 0.6)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  borderRadius: '12px',
-                  color: '#f8fafc',
-                  fontSize: '0.9rem',
-                  outline: 'none'
-                }}
-              />
-            </div>
-
-            {/* JOIN FAMILY PASSWORD & CONFIRM PASSWORD */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1rem' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#cbd5e1', marginBottom: '0.35rem' }}>
-                  Create Password
-                </label>
-                <div style={{ position: 'relative' }}>
-                  <input
-                    type={showJoinPassword ? 'text' : 'password'}
-                    placeholder="Min 6 chars"
-                    value={joinPassword}
-                    onChange={(e) => setJoinPassword(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '0.75rem 2.2rem 0.75rem 0.85rem',
-                      background: 'rgba(15, 23, 42, 0.6)',
-                      border: '1px solid rgba(255, 255, 255, 0.1)',
-                      borderRadius: '12px',
-                      color: '#f8fafc',
-                      fontSize: '0.9rem',
-                      outline: 'none'
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowJoinPassword(!showJoinPassword)}
-                    style={{
-                      position: 'absolute',
-                      right: '0.6rem',
-                      top: '50%',
-                      transform: 'translateY(-50%)',
-                      background: 'none',
-                      border: 'none',
-                      color: '#64748b',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      padding: 0
-                    }}
-                  >
-                    {showJoinPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#cbd5e1', marginBottom: '0.35rem' }}>
-                  Confirm Password
-                </label>
-                <div style={{ position: 'relative' }}>
-                  <input
-                    type={showJoinConfirmPassword ? 'text' : 'password'}
-                    placeholder="Re-enter password"
-                    value={joinConfirmPassword}
-                    onChange={(e) => setJoinConfirmPassword(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '0.75rem 2.2rem 0.75rem 0.85rem',
-                      background: 'rgba(15, 23, 42, 0.6)',
-                      border: joinConfirmPassword && joinPassword !== joinConfirmPassword ? '1px solid #f43f5e' : '1px solid rgba(255, 255, 255, 0.1)',
-                      borderRadius: '12px',
-                      color: '#f8fafc',
-                      fontSize: '0.9rem',
-                      outline: 'none'
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowJoinConfirmPassword(!showJoinConfirmPassword)}
-                    style={{
-                      position: 'absolute',
-                      right: '0.6rem',
-                      top: '50%',
-                      transform: 'translateY(-50%)',
-                      background: 'none',
-                      border: 'none',
-                      color: '#64748b',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      padding: 0
-                    }}
-                  >
-                    {showJoinConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Live Password Match Indicator for Join Family */}
-            {joinConfirmPassword && (
-              <div style={{
-                fontSize: '0.75rem',
-                marginBottom: '1rem',
-                color: joinPassword === joinConfirmPassword ? '#34d399' : '#fb7185',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.35rem'
-              }}>
-                {joinPassword === joinConfirmPassword ? (
-                  <>✓ Passwords match</>
-                ) : (
-                  <>✕ Passwords do not match</>
-                )}
-              </div>
-            )}
-
-            <div style={{ marginBottom: '1.5rem' }}>
-              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#cbd5e1', marginBottom: '0.35rem' }}>
-                Member Role
-              </label>
-              <select
-                value={joinRole}
-                onChange={(e) => setJoinRole(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '0.75rem 1rem',
-                  background: 'rgba(15, 23, 42, 0.6)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  borderRadius: '12px',
-                  color: '#f8fafc',
-                  fontSize: '0.9rem',
-                  outline: 'none'
-                }}
-              >
-                <option value="child">Child / Dependent (Student / Contributor)</option>
-                <option value="parent">Parent / Co-Manager</option>
-              </select>
-            </div>
-
-            <button
-              type="submit"
-              style={{
-                width: '100%',
-                padding: '0.85rem',
-                borderRadius: '12px',
-                border: 'none',
-                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                color: '#ffffff',
-                fontWeight: 700,
-                fontSize: '0.95rem',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '0.5rem',
-                boxShadow: '0 8px 16px rgba(16, 185, 129, 0.25)'
-              }}
-            >
-              Join Family Account <ArrowRight size={16} />
-            </button>
-          </form>
-        )}
+      {/* Footer Notice */}
+      <div style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-subtle)', padding: '0.5rem' }}>
+        © 2026 OnePot • <em>"One family, one pot = No stories"</em> • Closed-Loop Academic Mock Ledger
       </div>
     </div>
   );

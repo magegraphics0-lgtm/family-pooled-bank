@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
-import { Landmark, ArrowUpRight, ArrowDownLeft, Shield, Lock, CheckCircle, CreditCard } from 'lucide-react';
+import { Landmark, ArrowUpRight, ArrowDownLeft, Shield, CheckCircle, CreditCard, HandCoins } from 'lucide-react';
 import { db } from '../services/db';
 import { SMTPNotificationService } from '../services/smtpService';
 import DepositAccountModal from './DepositAccountModal';
+import AllocationRequestModal from './AllocationRequestModal';
 
 export default function PooledFundCard({ currentUser, poolData, transactions, onDataChange }) {
   const [showContributeModal, setShowContributeModal] = useState(false);
   const [showAllocateModal, setShowAllocateModal] = useState(false);
+  const [showRequestModal, setShowRequestModal] = useState(false);
   const [showBankModal, setShowBankModal] = useState(false);
 
   // Form states
@@ -115,7 +117,7 @@ export default function PooledFundCard({ currentUser, poolData, transactions, on
           {/* Shared Balance Display */}
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-muted)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, marginBottom: '0.35rem' }}>
-              <Landmark size={18} color="#10b981" /> Shared Family Pooled Bank Balance (Ajo Fund)
+              <Landmark size={18} color="#10b981" /> Shared Family Pot Balance
             </div>
             <div style={{ fontSize: '2.5rem', fontWeight: 800, fontFamily: 'Outfit, sans-serif', color: '#ffffff', letterSpacing: '-0.02em', display: 'flex', alignItems: 'baseline', gap: '0.35rem' }}>
               <span style={{ color: '#10b981', fontSize: '2rem' }}>₦</span>
@@ -128,16 +130,16 @@ export default function PooledFundCard({ currentUser, poolData, transactions, on
 
           {/* Action Buttons */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', flexWrap: 'wrap' }}>
-            {/* Link Deposit Bank Account Button */}
+            {/* Send Money Button */}
             <button
               onClick={() => setShowBankModal(true)}
               className="btn btn-secondary"
               style={{ padding: '0.75rem 1.2rem', fontSize: '0.9rem' }}
             >
-              <CreditCard size={18} color="#10b981" /> + Link Deposit Bank
+              <CreditCard size={18} color="#10b981" /> Send Money
             </button>
 
-            {/* Contribute Button - Open to All Roles */}
+            {/* Contribute to Pool Button - Visible to All Roles */}
             <button 
               onClick={() => { setErrorMsg(''); setShowContributeModal(true); }} 
               className="btn btn-primary"
@@ -146,23 +148,34 @@ export default function PooledFundCard({ currentUser, poolData, transactions, on
               <ArrowUpRight size={20} /> Contribute to Pool
             </button>
 
-            {/* Allocate Button - Parent Permission Only */}
-            <button 
-              onClick={() => {
-                setErrorMsg('');
-                if (currentUser.role !== 'parent') {
-                  alert('🔒 Restricted Action: Only Parent Managers (Father & Mother) can allocate money from the shared pooled bank fund.');
-                  return;
-                }
-                setShowAllocateModal(true);
-              }} 
-              className="btn btn-accent"
-              style={{ padding: '0.75rem 1.4rem', fontSize: '0.95rem', opacity: currentUser.role !== 'parent' ? 0.7 : 1 }}
-              title={currentUser.role !== 'parent' ? 'Parent Authorization Required' : 'Allocate Pooled Funds'}
-            >
-              {currentUser.role !== 'parent' ? <Lock size={18} /> : <ArrowDownLeft size={20} />} 
-              Allocate Pooled Funds {currentUser.role !== 'parent' && '(Parents Only)'}
-            </button>
+            {/* Dynamic RBAC Action: Parent View vs Child View */}
+            {currentUser?.role === 'parent' ? (
+              /* Parent View: Allocate Pooled Funds */
+              <button 
+                onClick={() => {
+                  setErrorMsg('');
+                  setShowAllocateModal(true);
+                }} 
+                className="btn btn-accent"
+                style={{ padding: '0.75rem 1.4rem', fontSize: '0.95rem' }}
+                title="Allocate Pooled Funds"
+              >
+                <ArrowDownLeft size={20} /> Allocate Pooled Funds
+              </button>
+            ) : (
+              /* Child View: Replaces Allocate Pooled Funds with Request Fund Allocation */
+              <button 
+                onClick={() => {
+                  setErrorMsg('');
+                  setShowRequestModal(true);
+                }} 
+                className="btn btn-accent"
+                style={{ padding: '0.75rem 1.4rem', fontSize: '0.95rem' }}
+                title="Request Fund Allocation from Parents"
+              >
+                <HandCoins size={20} /> Request Fund Allocation
+              </button>
+            )}
           </div>
         </div>
 
@@ -302,7 +315,8 @@ export default function PooledFundCard({ currentUser, poolData, transactions, on
                   <label className="form-label">Allocation Amount (₦)</label>
                   <input 
                     type="number" 
-                    step="500"
+                    min="1"
+                    step="any"
                     placeholder="e.g. 80000"
                     className="form-input" 
                     value={allocateAmount}
@@ -338,6 +352,14 @@ export default function PooledFundCard({ currentUser, poolData, transactions, on
         isOpen={showBankModal}
         onClose={() => setShowBankModal(false)}
         onAccountAdded={onDataChange}
+      />
+
+      {/* CHILD ALLOCATION REQUEST MODAL */}
+      <AllocationRequestModal 
+        isOpen={showRequestModal}
+        onClose={() => setShowRequestModal(false)}
+        currentUser={currentUser}
+        onRequestSubmitted={onDataChange}
       />
     </div>
   );

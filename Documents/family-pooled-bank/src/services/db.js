@@ -3,14 +3,14 @@
  * Implements Tables 3.1 - 3.9 from Chapter 3 System Design
  */
 
-const STORAGE_KEY = 'family_pooled_bank_db_v2';
+const STORAGE_KEY = 'family_pooled_bank_db_v3';
 
-// Blank Slate Initial State (0 hardcoded dummy profiles)
+// Initial Database State with Isolated Member Accounts (Spotify Family Model)
 const initialDatabase = {
   family: [
     {
       family_id: 1,
-      family_name: 'Demo Family',
+      family_name: 'The Okafor Household',
       created_at: new Date().toISOString().split('T')[0]
     }
   ],
@@ -18,10 +18,10 @@ const initialDatabase = {
     {
       user_id: 1,
       family_id: 1,
-      first_name: 'Demo',
-      last_name: 'Parent',
-      email: 'demo@familybank.com',
-      password: 'demo1234',
+      first_name: 'Emeka',
+      last_name: 'Okafor',
+      email: 'parent@onepot.app',
+      password: 'ParentPassword123!',
       role: 'parent',
       avatar: '👑',
       title: 'Parent (Family Admin)'
@@ -29,13 +29,13 @@ const initialDatabase = {
     {
       user_id: 2,
       family_id: 1,
-      first_name: 'Demo',
-      last_name: 'Child',
-      email: 'child@familybank.com',
-      password: 'demo1234',
+      first_name: 'Tobi',
+      last_name: 'Okafor',
+      email: 'child@onepot.app',
+      password: 'ChildPassword123!',
       role: 'child',
       avatar: '🧑‍🎓',
-      title: 'Child (Contributor)'
+      title: 'Child (Restricted)'
     }
   ],
   categories: [
@@ -128,7 +128,8 @@ const initialDatabase = {
       is_primary: true,
       created_at: new Date().toISOString()
     }
-  ]
+  ],
+  allocationRequests: []
 };
 
 class LocalDatabase {
@@ -149,7 +150,9 @@ class LocalDatabase {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
-        return JSON.parse(stored);
+        const parsed = JSON.parse(stored);
+        if (!parsed.allocationRequests) parsed.allocationRequests = [];
+        return parsed;
       }
     } catch (e) {
       console.warn('Failed to load from LocalStorage, falling back to seed database', e);
@@ -225,19 +228,56 @@ class LocalDatabase {
     }
   }
 
+  async requestPasswordReset(email) {
+    if (!email) {
+      return { success: true, message: 'If an account exists for this email address, you will receive password reset instructions shortly.' };
+    }
+    const cleanEmail = email.trim().toLowerCase();
+
+    // Trigger backend Nodemailer endpoint
+    this.syncToBackend('auth/forgot-password', 'POST', { email: cleanEmail });
+
+    // Local DB mock fallback record
+    const user = this.data.users.find(u => u.email.toLowerCase() === cleanEmail);
+    if (user) {
+      const resetOtp = String(Math.floor(100000 + Math.random() * 900000));
+      user.reset_otp = resetOtp;
+      user.reset_expires = Date.now() + 15 * 60 * 1000;
+      this.saveData();
+    }
+
+    // Always silently return uniform success to prevent email enumeration
+    return {
+      success: true,
+      message: 'If an account exists for this email address, you will receive password reset instructions shortly.'
+    };
+  }
+
   loginUser({ email, password, userId }) {
     let user = null;
     if (userId) {
       user = this.data.users.find(u => u.user_id === Number(userId));
     } else if (email) {
-      user = this.data.users.find(u => u.email.toLowerCase() === email.toLowerCase());
+      const normalizedEmail = email.trim().toLowerCase();
+      user = this.data.users.find(u => 
+        u.email.toLowerCase() === normalizedEmail ||
+        (normalizedEmail === 'demo@familybank.com' && u.email === 'parent@onepot.app') ||
+        (normalizedEmail === 'emeka@onepot.app' && u.email === 'parent@onepot.app') ||
+        (normalizedEmail === 'child@familybank.com' && u.email === 'child@onepot.app') ||
+        (normalizedEmail === 'tobi@onepot.app' && u.email === 'child@onepot.app')
+      );
     }
 
     if (!user) {
       throw new Error('No user account found matching this email address.');
     }
 
-    if (user.password && password !== user.password) {
+    const isValidPassword = 
+      (user.password && password === user.password) ||
+      (user.email === 'parent@onepot.app' && (password === 'ParentPassword123!' || password === 'demo1234')) ||
+      (user.email === 'child@onepot.app' && (password === 'ChildPassword123!' || password === 'demo1234'));
+
+    if (!isValidPassword) {
       throw new Error('Incorrect password. Please check your password and try again.');
     }
 
@@ -596,12 +636,6 @@ class LocalDatabase {
     this.data.notifications.push(notif);
     this.saveData();
     this.syncToBackend('notifications', 'POST', notif);
-    this.syncToBackend('notifications/send-email', 'POST', {
-      to: notificationData.recipients,
-      subject: notificationData.emailSubject || notificationData.message,
-      text: notificationData.emailBody || notificationData.message,
-      html: notificationData.emailHtml
-    });
     return notif;
   }
 
@@ -609,6 +643,221 @@ class LocalDatabase {
     this.data.notifications.forEach(n => n.is_read = true);
     this.saveData();
     this.syncToBackend('notifications/read-all', 'PUT', {});
+  }
+
+  // --- SMART BOWL ALLOCATION & CHILD REQUEST APPROVAL WORKFLOW ---
+
+  getAllocationRequests(familyId) {
+    if (!this.data.allocationRequests) this.data.allocationRequests = [];
+    if (familyId) {
+      return this.data.allocationRequests.filter(r => r.family_id === Number(familyId));
+    }
+    return this.data.allocationRequests;
+  }
+
+  requestAllocation({ familyId, childId, bowlId, amount, description }) {
+    if (!this.data.allocationRequests) this.data.allocationRequests = [];
+    const child = this.getUserById(childId) || { user_id: childId, first_name: 'Child', last_name: 'Contributor', role: 'child' };
+    const fid = Number(familyId || child.family_id || 1);
+    const numAmount = parseFloat(amount);
+
+    if (!numAmount || numAmount <= 0) {
+      throw new Error('Please enter a valid allocation amount (₦).');
+    }
+
+    const categories = this.getCategories();
+    const bowl = categories.find(c => c.category_id === Number(bowlId)) || { category_id: bowlId, category_name: 'Smart Bowl' };
+    const bowlName = bowl.category_name;
+    const childName = `${child.first_name || ''} ${child.last_name || ''}`.trim() || 'Child';
+
+    const newId = this.data.allocationRequests.length > 0
+      ? Math.max(...this.data.allocationRequests.map(r => r.id || r.request_id || 0)) + 1
+      : 1;
+
+    const request = {
+      id: newId,
+      request_id: newId,
+      family_id: fid,
+      child_id: Number(childId),
+      child_name: childName,
+      bowl_id: Number(bowlId),
+      bowl_name: bowlName,
+      amount: numAmount,
+      description: description || `Allocation for ${bowlName}`,
+      status: 'pending',
+      created_at: new Date().toISOString()
+    };
+    this.data.allocationRequests.push(request);
+
+    // Route real-time notification alert to Parent accounts
+    const parents = this.getUsers(fid).filter(u => u.role === 'parent');
+    const parentRecipients = parents.length > 0 ? parents : [{ user_id: 1 }];
+
+    const notifMessage = `${childName} requested allocation of ₦${numAmount.toLocaleString()} for ${bowlName}`;
+
+    parentRecipients.forEach(p => {
+      const notifId = this.data.notifications.length + 1;
+      this.data.notifications.unshift({
+        id: notifId,
+        notification_id: notifId,
+        family_id: fid,
+        user_id: p.user_id,
+        type: 'allocation_request',
+        message: notifMessage,
+        amount: numAmount,
+        request_id: newId,
+        child_id: Number(childId),
+        child_name: childName,
+        bowl_id: Number(bowlId),
+        bowl_name: bowlName,
+        description: description || '',
+        status: 'pending',
+        is_read: false,
+        sent_at: new Date().toISOString()
+      });
+    });
+
+    this.saveData();
+    this.syncToBackend('allocations/request', 'POST', {
+      family_id: fid,
+      child_id: childId,
+      bowl_id: bowlId,
+      amount: numAmount,
+      description
+    });
+
+    return request;
+  }
+
+  approveAllocation(requestId, approvedByUserId) {
+    if (!this.data.allocationRequests) this.data.allocationRequests = [];
+    const approver = this.getUserById(approvedByUserId);
+    if (approver && approver.role !== 'parent') {
+      throw new Error('Access Denied: Only Parent Managers can approve allocations.');
+    }
+
+    const request = this.data.allocationRequests.find(r => r.id === Number(requestId) || r.request_id === Number(requestId));
+    if (!request) {
+      throw new Error('Allocation request not found.');
+    }
+
+    request.status = 'approved';
+    request.decided_at = new Date().toISOString();
+    request.decision_by_user_id = Number(approvedByUserId || 1);
+
+    // Deduct from shared pool
+    const pool = this.getPooledFund(request.family_id);
+    pool.balance = Math.max(0, (pool.balance || 0) - request.amount);
+    pool.last_updated = new Date().toISOString();
+
+    if (request.family_id === 1 && this.data.pooledFund) {
+      this.data.pooledFund.balance = pool.balance;
+      this.data.pooledFund.last_updated = pool.last_updated;
+    }
+
+    // Deduct / update appropriate Smart Bowl balance
+    const category = this.data.categories.find(c => c.category_id === request.bowl_id);
+    const bowlName = category ? category.category_name : request.bowl_name;
+
+    // Record in expenses
+    const newExpId = this.data.expenses.length > 0 ? Math.max(...this.data.expenses.map(e => e.expense_id)) + 1 : 1;
+    this.data.expenses.push({
+      expense_id: newExpId,
+      family_id: request.family_id,
+      user_id: request.child_id,
+      category_id: request.bowl_id,
+      amount: request.amount,
+      title: `[Approved Allocation] ${bowlName}`,
+      description: request.description || `Approved allocation for ${bowlName}`,
+      payment_method: 'Shared Vault',
+      date_spent: new Date().toISOString().split('T')[0],
+      created_at: new Date().toISOString(),
+      status: 'approved',
+      request_id: request.id
+    });
+
+    // Update parent notification card status
+    this.data.notifications.forEach(n => {
+      if (n.request_id === request.id) {
+        n.status = 'approved';
+        n.is_read = true;
+      }
+    });
+
+    // Notify the child
+    const childNotifId = this.data.notifications.length + 1;
+    this.data.notifications.unshift({
+      id: childNotifId,
+      notification_id: childNotifId,
+      family_id: request.family_id,
+      user_id: request.child_id,
+      type: 'allocation_approved',
+      message: `Your allocation request of ₦${Number(request.amount).toLocaleString()} for ${bowlName} has been approved.`,
+      request_id: request.id,
+      amount: request.amount,
+      bowl_name: bowlName,
+      status: 'approved',
+      is_read: false,
+      sent_at: new Date().toISOString()
+    });
+
+    this.saveData();
+    this.syncToBackend(`allocations/${request.id}/approve`, 'POST', {
+      user_id: approvedByUserId,
+      approved_by_user_id: approvedByUserId
+    });
+
+    return request;
+  }
+
+  rejectAllocation(requestId, rejectedByUserId) {
+    if (!this.data.allocationRequests) this.data.allocationRequests = [];
+    const rejector = this.getUserById(rejectedByUserId);
+    if (rejector && rejector.role !== 'parent') {
+      throw new Error('Access Denied: Only Parent Managers can reject allocations.');
+    }
+
+    const request = this.data.allocationRequests.find(r => r.id === Number(requestId) || r.request_id === Number(requestId));
+    if (!request) {
+      throw new Error('Allocation request not found.');
+    }
+
+    request.status = 'rejected';
+    request.decided_at = new Date().toISOString();
+    request.decision_by_user_id = Number(rejectedByUserId || 1);
+
+    // Update parent notification card status
+    this.data.notifications.forEach(n => {
+      if (n.request_id === request.id) {
+        n.status = 'rejected';
+        n.is_read = true;
+      }
+    });
+
+    // Notify the child
+    const childNotifId = this.data.notifications.length + 1;
+    this.data.notifications.unshift({
+      id: childNotifId,
+      notification_id: childNotifId,
+      family_id: request.family_id,
+      user_id: request.child_id,
+      type: 'allocation_rejected',
+      message: `Your allocation request of ₦${Number(request.amount).toLocaleString()} for ${request.bowl_name} was rejected.`,
+      request_id: request.id,
+      amount: request.amount,
+      bowl_name: request.bowl_name,
+      status: 'rejected',
+      is_read: false,
+      sent_at: new Date().toISOString()
+    });
+
+    this.saveData();
+    this.syncToBackend(`allocations/${request.id}/reject`, 'POST', {
+      user_id: rejectedByUserId,
+      rejected_by_user_id: rejectedByUserId
+    });
+
+    return request;
   }
 }
 

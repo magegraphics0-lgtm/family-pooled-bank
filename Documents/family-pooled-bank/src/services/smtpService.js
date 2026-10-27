@@ -120,7 +120,7 @@ export class SMTPNotificationService {
       `- Registered Email: ${user.email}\n\n` +
       `🚀 What you can do with your Pooled Bank account:\n` +
       `1. Set and monitor monthly budget caps with automated email warning alerts.\n` +
-      `2. Contribute and allocate funds in your family's Ajo / Esusu shared vault.\n` +
+      `2. Contribute and allocate funds in your family's Shared Vault pot.\n` +
       `3. Track comprehensive financial reports and spending breakdown analytics.\n\n` +
       `Thank you for securing your household's financial future with us!\n\n` +
       `Warm regards,\n` +
@@ -146,7 +146,7 @@ export class SMTPNotificationService {
           <h4 style="color: #f8fafc; margin-bottom: 0.5rem;">🚀 What you can do next:</h4>
           <ol style="color: #94a3b8; line-height: 1.6; padding-left: 1.2rem;">
             <li>Set monthly spending caps per expense category.</li>
-            <li>Contribute or request allocations from the shared Ajo / Esusu vault.</li>
+            <li>Contribute or request allocations from the Shared Vault pot.</li>
             <li>Receive real-time automated SMTP alerts when budgets reach 80% or 100%.</li>
           </ol>
 

@@ -2,27 +2,33 @@ import React, { useState } from 'react';
 import { 
   TrendingUp, 
   TrendingDown, 
-  Wallet, 
   Landmark, 
-  CreditCard,
-  Search,
-  Filter,
-  ArrowUpRight,
-  ArrowDownLeft,
-  Receipt,
-  RotateCcw
+  CreditCard, 
+  Search, 
+  Filter, 
+  ArrowUpRight, 
+  ArrowDownLeft, 
+  Receipt, 
+  RotateCcw,
+  HandCoins
 } from 'lucide-react';
 import { db } from '../services/db';
 import PooledFundCard from './PooledFundCard';
 import ExpenseFormModal from './ExpenseFormModal';
-import IncomeFormModal from './IncomeFormModal';
+import AllocationRequestModal from './AllocationRequestModal';
 
-export default function Dashboard({ currentUser, currentFamily, onDataChange }) {
+export default function Dashboard({ currentUser, currentFamily, onDataChange, onNavigateTab }) {
   const [showExpenseModal, setShowExpenseModal] = useState(false);
-  const [showIncomeModal, setShowIncomeModal] = useState(false);
+  const [showRequestModal, setShowRequestModal] = useState(false);
+  const [showAllocateModal, setShowAllocateModal] = useState(false);
+  const [directAllocateAmount, setDirectAllocateAmount] = useState('');
+  const [directAllocateBowlId, setDirectAllocateBowlId] = useState('');
+  const [directAllocatePurpose, setDirectAllocatePurpose] = useState('');
+  const [allocateError, setAllocateError] = useState('');
+  const [allocateSuccess, setAllocateSuccess] = useState('');
 
   // Filter & Search states for the comprehensive Household Transaction History
-  const [activeTypeFilter, setActiveTypeFilter] = useState('all'); // 'all' | 'expense' | 'income' | 'pool'
+  const [activeTypeFilter, setActiveTypeFilter] = useState('all'); // 'all' | 'expense' | 'pool'
   const [searchQuery, setSearchQuery] = useState('');
   const [memberFilter, setMemberFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
@@ -33,15 +39,18 @@ export default function Dashboard({ currentUser, currentFamily, onDataChange }) 
   const categories = db.getCategories();
   const pooledFund = db.getPooledFund(familyId);
   const poolTransactions = db.getPoolTransactions(familyId);
-  const incomes = db.getIncomes(familyId);
   const expenses = db.getExpenses(familyId);
 
-  // Financial calculations
-  const totalIncome = incomes.reduce((sum, inc) => sum + Number(inc.amount), 0);
+  // Financial calculations - strictly pooled contributions, pot allocations & household expenses
+  const totalContributions = poolTransactions
+    .filter(p => p.type === 'contribution')
+    .reduce((sum, p) => sum + Number(p.amount), 0);
+  const totalAllocations = poolTransactions
+    .filter(p => p.type === 'allocation')
+    .reduce((sum, p) => sum + Number(p.amount), 0);
   const totalExpenses = expenses.reduce((sum, exp) => sum + Number(exp.amount), 0);
-  const netSurplus = totalIncome - totalExpenses;
 
-  // Build Unified Household Transaction History
+  // Build Unified Household Transaction History (Contributions, Allocations & Expenses)
   const allHouseholdTransactions = [
     ...expenses.map(e => ({
       id: `exp-${e.expense_id}`,
@@ -55,28 +64,16 @@ export default function Dashboard({ currentUser, currentFamily, onDataChange }) 
       payment_method: e.payment_method || 'Bank Transfer',
       notes: e.notes || ''
     })),
-    ...incomes.map(i => ({
-      id: `inc-${i.income_id}`,
-      rawId: i.income_id,
-      type: 'income',
-      title: i.title || i.source || 'Earned Income',
-      amount: Number(i.amount),
-      date: i.date_received,
-      user_id: i.user_id,
-      category_id: null,
-      payment_method: i.source || 'Direct Bank Deposit',
-      notes: i.notes || ''
-    })),
     ...poolTransactions.map(p => ({
       id: `pool-${p.transaction_id}`,
       rawId: p.transaction_id,
       type: p.type === 'contribution' ? 'pool_deposit' : 'pool_allocation',
-      title: p.purpose || (p.type === 'contribution' ? 'Ajo Pool Contribution' : 'Ajo Pool Allocation'),
+      title: p.purpose || (p.type === 'contribution' ? 'Family Pot Contribution' : 'Family Pot Allocation'),
       amount: Number(p.amount),
       date: p.date || p.created_at?.split('T')[0] || new Date().toISOString().split('T')[0],
       user_id: p.user_id,
       category_id: null,
-      payment_method: 'Shared Pooled Vault (Ajo)',
+      payment_method: 'Shared Vault',
       notes: p.purpose || ''
     }))
   ];
@@ -86,7 +83,6 @@ export default function Dashboard({ currentUser, currentFamily, onDataChange }) 
     .filter(tx => {
       // Type filter
       if (activeTypeFilter === 'expense' && tx.type !== 'expense') return false;
-      if (activeTypeFilter === 'income' && tx.type !== 'income') return false;
       if (activeTypeFilter === 'pool' && tx.type !== 'pool_deposit' && tx.type !== 'pool_allocation') return false;
 
       // Member filter
@@ -126,7 +122,8 @@ export default function Dashboard({ currentUser, currentFamily, onDataChange }) 
 
   // Aggregated totals for the filtered results
   const filteredExpenseTotal = filteredTransactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
-  const filteredIncomeTotal = filteredTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+  const filteredContributions = filteredTransactions.filter(t => t.type === 'pool_deposit').reduce((sum, t) => sum + t.amount, 0);
+  const filteredAllocations = filteredTransactions.filter(t => t.type === 'pool_allocation').reduce((sum, t) => sum + t.amount, 0);
 
   const resetFilters = () => {
     setActiveTypeFilter('all');
@@ -148,21 +145,64 @@ export default function Dashboard({ currentUser, currentFamily, onDataChange }) 
         onDataChange={onDataChange}
       />
 
-      {/* Quick Actions & High-level Financial Widgets */}
+      {/* Quick Actions & High-level Financial Widgets (Dynamic Parent vs. Child Role Check) */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
-        <h2 style={{ fontSize: '1.25rem', fontWeight: 700 }}>Household Cashflow Overview</h2>
-        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+        <div>
+          <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>Household Cashflow Overview</h2>
+          <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+            {currentUser?.role === 'parent' 
+              ? '👑 Parent Admin View: Full control to contribute & disburse pot funds'
+              : '🧑‍🎓 Child Contributor View: Contribute to pot & request fund allocations'}
+          </span>
+        </div>
+
+        {/* Dynamic CTA Action Buttons */}
+        <div style={{ display: 'flex', gap: '0.65rem', flexWrap: 'wrap', alignItems: 'center' }}>
+          {/* Contribute to Pool Button (Available to both Parent and Child) */}
           <button 
-            onClick={() => setShowIncomeModal(true)} 
+            onClick={() => {
+              if (onNavigateTab) {
+                onNavigateTab('pool');
+              } else {
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }
+            }} 
             className="btn btn-secondary"
-            style={{ fontSize: '0.85rem' }}
+            style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
           >
-            <TrendingUp size={16} color="#10b981" /> + Log Income
+            <ArrowUpRight size={16} color="#10b981" /> Contribute to Pool
           </button>
+
+          {/* Dynamic Role Check: Parent View vs Child View */}
+          {currentUser?.role === 'parent' ? (
+            /* Parent View: Allocate Pooled Funds */
+            <button 
+              onClick={() => {
+                setAllocateError('');
+                setShowAllocateModal(true);
+              }} 
+              className="btn btn-accent"
+              style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+              title="Allocate Pooled Funds"
+            >
+              <ArrowDownLeft size={16} /> Allocate Pooled Funds
+            </button>
+          ) : (
+            /* Child View: Replaces Allocate Pooled Funds with Request Fund Allocation */
+            <button 
+              onClick={() => setShowRequestModal(true)} 
+              className="btn btn-accent"
+              style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+              title="Request Fund Allocation from Parent Admins"
+            >
+              <HandCoins size={16} /> Request Fund Allocation
+            </button>
+          )}
+
           <button 
             onClick={() => setShowExpenseModal(true)} 
             className="btn btn-primary"
-            style={{ fontSize: '0.85rem' }}
+            style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
           >
             <CreditCard size={16} /> + Log Expense
           </button>
@@ -171,18 +211,18 @@ export default function Dashboard({ currentUser, currentFamily, onDataChange }) 
 
       {/* 4 Stat Cards */}
       <div className="grid-4" style={{ marginBottom: '1.75rem' }}>
-        {/* Total Income Card */}
+        {/* Total Pooled Contributions Card */}
         <div className="glass-panel" style={{ padding: '1.25rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.5rem' }}>
-            <span>TOTAL FAMILY INCOME</span>
+            <span>TOTAL CONTRIBUTIONS</span>
             <div style={{ background: 'rgba(16, 185, 129, 0.15)', padding: '0.35rem', borderRadius: '8px' }}>
               <TrendingUp size={18} color="#10b981" />
             </div>
           </div>
-          <div style={{ fontSize: '1.6rem', fontWeight: 800, fontFamily: 'Outfit, sans-serif' }}>
-            ₦{totalIncome.toLocaleString()}
+          <div style={{ fontSize: '1.6rem', fontWeight: 800, fontFamily: 'Outfit, sans-serif', color: '#10b981' }}>
+            ₦{totalContributions.toLocaleString()}
           </div>
-          <span style={{ fontSize: '0.75rem', color: '#10b981' }}>Across all {users.length} household earner{users.length === 1 ? '' : 's'}</span>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Pooled contributions from household</span>
         </div>
 
         {/* Total Expenses Card */}
@@ -199,24 +239,24 @@ export default function Dashboard({ currentUser, currentFamily, onDataChange }) 
           <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{expenses.length} transaction{expenses.length === 1 ? '' : 's'} recorded</span>
         </div>
 
-        {/* Net Surplus / Deficit */}
+        {/* Pot Allocations Disbursed */}
         <div className="glass-panel" style={{ padding: '1.25rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.5rem' }}>
-            <span>NET HOUSEHOLD SURPLUS</span>
-            <div style={{ background: netSurplus >= 0 ? 'rgba(59, 130, 246, 0.15)' : 'rgba(244, 63, 94, 0.15)', padding: '0.35rem', borderRadius: '8px' }}>
-              <Wallet size={18} color={netSurplus >= 0 ? '#3b82f6' : '#f43f5e'} />
+            <span>POT ALLOCATIONS</span>
+            <div style={{ background: 'rgba(59, 130, 246, 0.15)', padding: '0.35rem', borderRadius: '8px' }}>
+              <ArrowDownLeft size={18} color="#3b82f6" />
             </div>
           </div>
-          <div style={{ fontSize: '1.6rem', fontWeight: 800, fontFamily: 'Outfit, sans-serif', color: netSurplus >= 0 ? '#38bdf8' : '#f87171' }}>
-            ₦{netSurplus.toLocaleString()}
+          <div style={{ fontSize: '1.6rem', fontWeight: 800, fontFamily: 'Outfit, sans-serif', color: '#38bdf8' }}>
+            ₦{totalAllocations.toLocaleString()}
           </div>
-          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Income minus Expenses</span>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Disbursed from shared vault</span>
         </div>
 
         {/* Pooled Bank Fund */}
         <div className="glass-panel" style={{ padding: '1.25rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.5rem' }}>
-            <span>SHARED POOLED BANK</span>
+            <span>SHARED FAMILY POT</span>
             <div style={{ background: 'rgba(245, 158, 11, 0.15)', padding: '0.35rem', borderRadius: '8px' }}>
               <Landmark size={18} color="#f59e0b" />
             </div>
@@ -224,7 +264,7 @@ export default function Dashboard({ currentUser, currentFamily, onDataChange }) 
           <div style={{ fontSize: '1.6rem', fontWeight: 800, fontFamily: 'Outfit, sans-serif', color: '#f59e0b' }}>
             ₦{pooledFund.balance.toLocaleString()}
           </div>
-          <span style={{ fontSize: '0.75rem', color: '#10b981' }}>100% transparent Ajo account</span>
+          <span style={{ fontSize: '0.75rem', color: '#10b981' }}>100% transparent Family Pot</span>
         </div>
       </div>
 
@@ -240,7 +280,7 @@ export default function Dashboard({ currentUser, currentFamily, onDataChange }) 
               <div>
                 <h3 style={{ fontSize: '1.2rem', fontWeight: 800, margin: 0 }}>Household Transaction History & Ledger</h3>
                 <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '0.15rem 0 0 0' }}>
-                  Unified, multi-user audit log of all expenditures, earned revenues, and shared pooled fund allocations.
+                  Unified audit log of all expenditures, pooled contributions, and shared pot allocations.
                 </p>
               </div>
             </div>
@@ -248,13 +288,6 @@ export default function Dashboard({ currentUser, currentFamily, onDataChange }) 
 
           {/* Quick Transaction Action Buttons */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-            <button 
-              onClick={() => setShowIncomeModal(true)} 
-              className="btn btn-secondary"
-              style={{ fontSize: '0.8rem', padding: '0.45rem 0.85rem' }}
-            >
-              <TrendingUp size={14} color="#10b981" /> + Income
-            </button>
             <button 
               onClick={() => setShowExpenseModal(true)} 
               className="btn btn-primary"
@@ -278,7 +311,7 @@ export default function Dashboard({ currentUser, currentFamily, onDataChange }) 
 
           <div>
             <span style={{ fontSize: '0.725rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              Total Filtered Outflows
+              Filtered Outflows
             </span>
             <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#f43f5e' }}>
               -₦{filteredExpenseTotal.toLocaleString()}
@@ -287,19 +320,19 @@ export default function Dashboard({ currentUser, currentFamily, onDataChange }) 
 
           <div>
             <span style={{ fontSize: '0.725rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              Total Filtered Inflows
+              Filtered Contributions
             </span>
             <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#10b981' }}>
-              +₦{filteredIncomeTotal.toLocaleString()}
+              +₦{filteredContributions.toLocaleString()}
             </div>
           </div>
 
           <div>
             <span style={{ fontSize: '0.725rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              Net Period Flow
+              Filtered Allocations
             </span>
-            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: (filteredIncomeTotal - filteredExpenseTotal) >= 0 ? '#38bdf8' : '#f87171' }}>
-              ₦{(filteredIncomeTotal - filteredExpenseTotal).toLocaleString()}
+            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#f59e0b' }}>
+              ₦{filteredAllocations.toLocaleString()}
             </div>
           </div>
         </div>
@@ -313,8 +346,7 @@ export default function Dashboard({ currentUser, currentFamily, onDataChange }) 
               {[
                 { id: 'all', label: `All Activities (${allHouseholdTransactions.length})` },
                 { id: 'expense', label: `Expenses (${expenses.length})` },
-                { id: 'income', label: `Incomes (${incomes.length})` },
-                { id: 'pool', label: `Ajo Pooled Vault (${poolTransactions.length})` },
+                { id: 'pool', label: `Shared Vault (${poolTransactions.length})` },
               ].map(tab => (
                 <button
                   key={tab.id}
@@ -431,7 +463,6 @@ export default function Dashboard({ currentUser, currentFamily, onDataChange }) 
                   const category = categories.find(c => c.category_id === tx.category_id);
 
                   const isExpense = tx.type === 'expense';
-                  const isIncome = tx.type === 'income';
                   const isPoolDeposit = tx.type === 'pool_deposit';
                   const isPoolAlloc = tx.type === 'pool_allocation';
 
@@ -447,14 +478,14 @@ export default function Dashboard({ currentUser, currentFamily, onDataChange }) 
                       <td style={{ padding: '0.9rem 1rem' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                           <span style={{ fontSize: '1.4rem' }}>
-                            {category?.icon || (isIncome ? '💰' : '🏦')}
+                            {category?.icon || (isPoolDeposit ? '📥' : '📤')}
                           </span>
                           <div>
                             <div style={{ fontWeight: 600, color: 'var(--text-main)', fontSize: '0.9rem' }}>
                               {tx.title}
                             </div>
                             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                              {category?.category_name || (isIncome ? 'Earned Revenue' : 'Shared Pooled Bank')}
+                              {category?.category_name || (isPoolDeposit ? 'Shared Pot Deposit' : 'Shared Pot Allocation')}
                               {tx.notes && ` • "${tx.notes}"`}
                             </div>
                           </div>
@@ -493,19 +524,14 @@ export default function Dashboard({ currentUser, currentFamily, onDataChange }) 
                             <TrendingDown size={12} /> Expense
                           </span>
                         )}
-                        {isIncome && (
-                          <span className="badge badge-parent">
-                            <TrendingUp size={12} /> Inflow
-                          </span>
-                        )}
                         {isPoolDeposit && (
-                          <span className="badge badge-warning">
-                            <ArrowUpRight size={12} /> Pool Deposit
+                          <span className="badge badge-parent">
+                            <ArrowUpRight size={12} /> Pot Contribution
                           </span>
                         )}
                         {isPoolAlloc && (
                           <span className="badge badge-warning">
-                            <ArrowDownLeft size={12} /> Pool Allocation
+                            <ArrowDownLeft size={12} /> Pot Allocation
                           </span>
                         )}
                       </td>
@@ -516,11 +542,10 @@ export default function Dashboard({ currentUser, currentFamily, onDataChange }) 
                         textAlign: 'right', 
                         fontWeight: 700, 
                         fontSize: '0.95rem',
-                        color: isExpense ? '#f43f5e' : isIncome ? '#10b981' : '#f59e0b',
+                        color: isExpense ? '#f43f5e' : isPoolDeposit ? '#10b981' : '#f59e0b',
                         whiteSpace: 'nowrap'
                       }}>
                         {isExpense && `-₦${tx.amount.toLocaleString()}`}
-                        {isIncome && `+₦${tx.amount.toLocaleString()}`}
                         {isPoolDeposit && `+₦${tx.amount.toLocaleString()}`}
                         {isPoolAlloc && `-₦${tx.amount.toLocaleString()}`}
                       </td>
@@ -556,13 +581,121 @@ export default function Dashboard({ currentUser, currentFamily, onDataChange }) 
         onExpenseAdded={onDataChange}
       />
 
-      {/* Income Modal */}
-      <IncomeFormModal 
+      {/* Child Allocation Request Modal */}
+      <AllocationRequestModal 
+        isOpen={showRequestModal}
+        onClose={() => setShowRequestModal(false)}
         currentUser={currentUser}
-        isOpen={showIncomeModal}
-        onClose={() => setShowIncomeModal(false)}
-        onIncomeAdded={onDataChange}
+        onRequestSubmitted={onDataChange}
       />
+
+      {/* Parent Direct Allocate Modal */}
+      {showAllocateModal && currentUser?.role === 'parent' && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h3 style={{ fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
+                <ArrowDownLeft color="#f59e0b" /> Allocate Pooled Funds (Parent Admin)
+              </h3>
+              <button 
+                onClick={() => setShowAllocateModal(false)} 
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1.2rem' }}
+              >
+                ✕
+              </button>
+            </div>
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              setAllocateError('');
+              if (!directAllocateAmount || Number(directAllocateAmount) <= 0) {
+                setAllocateError('Please enter a valid allocation amount (₦).');
+                return;
+              }
+              try {
+                const targetBowl = categories.find(c => c.category_id === Number(directAllocateBowlId)) || categories[0];
+                db.allocateFromPool(
+                  currentUser.user_id,
+                  directAllocateAmount,
+                  directAllocatePurpose || `Allocation for ${targetBowl?.category_name}`,
+                  familyId
+                );
+                setAllocateSuccess(`₦${Number(directAllocateAmount).toLocaleString()} allocated successfully!`);
+                setDirectAllocateAmount('');
+                setDirectAllocatePurpose('');
+                onDataChange();
+                setTimeout(() => {
+                  setAllocateSuccess('');
+                  setShowAllocateModal(false);
+                }, 1200);
+              } catch (err) {
+                setAllocateError(err.message || 'Allocation failed');
+              }
+            }}>
+              <div className="modal-body">
+                {allocateError && (
+                  <div style={{ background: 'rgba(244, 63, 94, 0.15)', color: '#f87171', padding: '0.65rem 0.9rem', borderRadius: 'var(--radius-sm)', marginBottom: '1rem', fontSize: '0.85rem' }}>
+                    ⚠️ {allocateError}
+                  </div>
+                )}
+                {allocateSuccess && (
+                  <div style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '0.65rem 0.9rem', borderRadius: 'var(--radius-sm)', marginBottom: '1rem', fontSize: '0.85rem' }}>
+                    ✅ {allocateSuccess}
+                  </div>
+                )}
+
+                <div className="form-group">
+                  <label className="form-label">Available Pooled Balance</label>
+                  <input type="text" className="form-input" value={`₦${pooledFund.balance.toLocaleString()}`} disabled style={{ opacity: 0.7 }} />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Destination Smart Bowl</label>
+                  <select 
+                    className="form-select"
+                    value={directAllocateBowlId}
+                    onChange={(e) => setDirectAllocateBowlId(e.target.value)}
+                  >
+                    {categories.map(c => (
+                      <option key={c.category_id} value={c.category_id}>
+                        {c.icon || '🍲'} {c.category_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Allocation Amount (₦)</label>
+                  <input 
+                    type="number"
+                    min="1"
+                    step="any"
+                    placeholder="e.g. 50000"
+                    className="form-input"
+                    value={directAllocateAmount}
+                    onChange={(e) => setDirectAllocateAmount(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Purpose Note</label>
+                  <input 
+                    type="text"
+                    placeholder="e.g. House Rent Advance / Children School Fees"
+                    className="form-input"
+                    value={directAllocatePurpose}
+                    onChange={(e) => setDirectAllocatePurpose(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-secondary" onClick={() => setShowAllocateModal(false)}>Cancel</button>
+                <button type="submit" className="btn btn-accent">Execute Allocation</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

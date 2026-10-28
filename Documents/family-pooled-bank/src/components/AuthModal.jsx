@@ -25,8 +25,7 @@ export default function AuthModal({
   initialTab = 'login',
   onBackToLanding
 }) {
-  const existingFamilies = db.getFamilies();
-  const [activeTab, setActiveTab] = useState(initialTab); // 'login' | 'register-family' | 'join-family'
+  const [activeTab, setActiveTab] = useState(initialTab === 'join-family' ? 'login' : initialTab); // 'login' | 'register-family'
   const [isForgotPassword, setIsForgotPassword] = useState(false);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
@@ -53,19 +52,8 @@ export default function AuthModal({
   const [showRegConfirmPassword, setShowRegConfirmPassword] = useState(false);
   const [regRole, setRegRole] = useState('parent');
 
-  // Form States - Join Family
-  const [joinFamilyId, setJoinFamilyId] = useState(existingFamilies[0]?.family_id?.toString() || '1');
-  const [joinFirstName, setJoinFirstName] = useState('');
-  const [joinLastName, setJoinLastName] = useState('');
-  const [joinEmail, setJoinEmail] = useState('');
-  const [joinPassword, setJoinPassword] = useState('');
-  const [joinConfirmPassword, setJoinConfirmPassword] = useState('');
-  const [showJoinPassword, setShowJoinPassword] = useState(false);
-  const [showJoinConfirmPassword, setShowJoinConfirmPassword] = useState(false);
-  const [joinRole, setJoinRole] = useState('child');
-
   // Handler: Login
-  const handleLoginSubmit = (e) => {
+  const handleLoginSubmit = async (e) => {
     e.preventDefault();
     if (!loginEmail.trim()) {
       setError('Please enter your email address.');
@@ -78,7 +66,7 @@ export default function AuthModal({
     try {
       setError('');
       setLoading(true);
-      const { user, family } = db.loginUser({ email: loginEmail.trim(), password: loginPassword });
+      const { user, family } = await db.loginUser({ email: loginEmail.trim(), password: loginPassword });
       setSuccessMsg(`Welcome back, ${user.first_name}!`);
       setTimeout(() => {
         setLoading(false);
@@ -91,13 +79,13 @@ export default function AuthModal({
   };
 
   // Quick Demo Login Helper
-  const handleQuickLogin = (email, password) => {
+  const handleQuickLogin = async (email, password) => {
     setLoginEmail(email);
     setLoginPassword(password);
     setError('');
     try {
       setLoading(true);
-      const { user, family } = db.loginUser({ email, password });
+      const { user, family } = await db.loginUser({ email, password });
       setSuccessMsg(`Welcome back, ${user.first_name}!`);
       setTimeout(() => {
         setLoading(false);
@@ -133,8 +121,8 @@ export default function AuthModal({
     }
   };
 
-  // Handler: Register Family
-  const handleRegisterFamilySubmit = (e) => {
+  // Handler: Register Family (Parent Registration)
+  const handleRegisterFamilySubmit = async (e) => {
     e.preventDefault();
     if (!regFamilyName.trim() || !regFirstName.trim() || !regEmail.trim()) {
       setError('Family Name, Admin First Name, and Email are required.');
@@ -155,65 +143,19 @@ export default function AuthModal({
     try {
       setError('');
       setLoading(true);
-      const { user, family } = db.registerFamily({
+      const { user, family } = await db.registerParent({
         familyName: regFamilyName.trim(),
         firstName: regFirstName.trim(),
         lastName: regLastName.trim(),
         email: regEmail.trim(),
         password: regPassword,
-        role: regRole,
-        avatar: regRole === 'parent' ? '👑' : '🧑‍🎓'
+        avatar: regRole === 'parent' ? '👑' : '👤'
       });
 
       // Dispatch automated welcome notification
       SMTPNotificationService.sendWelcomeEmail(user, family);
 
-      setSuccessMsg(`Family Account "${family.family_name}" created! Welcome email dispatched.`);
-      setTimeout(() => {
-        setLoading(false);
-        onLoginSuccess(user, family);
-      }, 700);
-    } catch (err) {
-      setLoading(false);
-      setError(err.message);
-    }
-  };
-
-  // Handler: Join Family
-  const handleJoinFamilySubmit = (e) => {
-    e.preventDefault();
-    if (!joinFirstName.trim() || !joinEmail.trim()) {
-      setError('First name and Email are required to join a family.');
-      return;
-    }
-    if (!joinPassword) {
-      setError('Please create a password for your account.');
-      return;
-    }
-    if (joinPassword.length < 6) {
-      setError('Password must be at least 6 characters long.');
-      return;
-    }
-    if (joinPassword !== joinConfirmPassword) {
-      setError('Passwords do not match! Please verify your password confirmation.');
-      return;
-    }
-    try {
-      setError('');
-      setLoading(true);
-      const { user, family } = db.joinFamily({
-        familyId: joinFamilyId,
-        firstName: joinFirstName.trim(),
-        lastName: joinLastName.trim(),
-        email: joinEmail.trim(),
-        password: joinPassword,
-        role: joinRole,
-        avatar: joinRole === 'parent' ? '🛡️' : '🧑‍🎓'
-      });
-
-      SMTPNotificationService.sendWelcomeEmail(user, family);
-
-      setSuccessMsg(`Successfully joined ${family.family_name}!`);
+      setSuccessMsg(`Family Account "${family.family_name}" created! Invite code: ${family.invite_code || ''}`);
       setTimeout(() => {
         setLoading(false);
         onLoginSuccess(user, family);
@@ -352,7 +294,7 @@ export default function AuthModal({
         }}>
           <Info size={14} color="var(--primary)" style={{ flexShrink: 0 }} />
           <span>
-            Closed-loop mock ledger. Real fund movement simulated via Paystack sandbox API.
+            This site is an academic demonstration of a family banking ledger. Transactions are simulated using Paystack test mode as real fund movement is not yet supported.
           </span>
         </div>
 
@@ -545,7 +487,7 @@ export default function AuthModal({
             {/* Segmented Tab Control */}
             <div style={{
               display: 'grid',
-              gridTemplateColumns: '1fr 1fr 1fr',
+              gridTemplateColumns: '1fr 1fr',
               gap: '0.25rem',
               background: 'var(--bg-primary)',
               padding: '0.3rem',
@@ -597,29 +539,6 @@ export default function AuthModal({
               >
                 <Building size={13} />
                 <span>New Family</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => { setActiveTab('join-family'); setError(''); setSuccessMsg(''); }}
-                style={{
-                  padding: '0.55rem 0.35rem',
-                  borderRadius: '9px',
-                  border: 'none',
-                  background: activeTab === 'join-family' ? 'var(--primary)' : 'transparent',
-                  color: activeTab === 'join-family' ? '#ffffff' : 'var(--text-muted)',
-                  fontWeight: 700,
-                  fontSize: '0.775rem',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '0.3rem',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                <Users size={13} />
-                <span>Join Pool</span>
               </button>
             </div>
 
@@ -801,7 +720,7 @@ export default function AuthModal({
                         textAlign: 'left'
                       }}
                     >
-                      <div>🧑‍🎓 Demo Child</div>
+                      <div>👤 Demo Child</div>
                       <div style={{ fontSize: '0.675rem', color: 'var(--accent-blue)' }}>child@onepot.app</div>
                     </button>
                   </div>
@@ -1051,259 +970,13 @@ export default function AuthModal({
                 </button>
               </form>
             )}
-
-            {/* TAB: JOIN EXISTING FAMILY */}
-            {activeTab === 'join-family' && (
-              <form onSubmit={handleJoinFamilySubmit}>
-                <div style={{ marginBottom: '0.85rem' }}>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '0.35rem' }}>
-                    Select Family Pot to Join
-                  </label>
-                  <select
-                    value={joinFamilyId}
-                    onChange={(e) => setJoinFamilyId(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '0.7rem 0.85rem',
-                      background: 'var(--bg-primary)',
-                      border: '1px solid var(--border-color)',
-                      borderRadius: '10px',
-                      color: 'var(--text-main)',
-                      fontSize: '0.875rem',
-                      outline: 'none'
-                    }}
-                  >
-                    {existingFamilies.map(f => (
-                      <option key={f.family_id} value={f.family_id}>
-                        {f.family_name} (ID #{f.family_id})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem', marginBottom: '0.85rem' }}>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '0.35rem' }}>
-                      First Name
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. Chidimma"
-                      value={joinFirstName}
-                      onChange={(e) => setJoinFirstName(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '0.7rem 0.85rem',
-                        background: 'var(--bg-primary)',
-                        border: '1px solid var(--border-color)',
-                        borderRadius: '10px',
-                        color: 'var(--text-main)',
-                        fontSize: '0.875rem',
-                        outline: 'none'
-                      }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '0.35rem' }}>
-                      Last Name
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Okafor"
-                      value={joinLastName}
-                      onChange={(e) => setJoinLastName(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '0.7rem 0.85rem',
-                        background: 'var(--bg-primary)',
-                        border: '1px solid var(--border-color)',
-                        borderRadius: '10px',
-                        color: 'var(--text-main)',
-                        fontSize: '0.875rem',
-                        outline: 'none'
-                      }}
-                    />
-                  </div>
-                </div>
-
-                <div style={{ marginBottom: '0.85rem' }}>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '0.35rem' }}>
-                    Email Address
-                  </label>
-                  <input
-                    type="email"
-                    required
-                    placeholder="chidimma.okafor@gmail.com"
-                    value={joinEmail}
-                    onChange={(e) => setJoinEmail(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '0.7rem 0.85rem',
-                      background: 'var(--bg-primary)',
-                      border: '1px solid var(--border-color)',
-                      borderRadius: '10px',
-                      color: 'var(--text-main)',
-                      fontSize: '0.875rem',
-                      outline: 'none'
-                    }}
-                  />
-                </div>
-
-                {/* Password & Confirm */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem', marginBottom: '0.5rem' }}>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '0.35rem' }}>
-                      Password
-                    </label>
-                    <div style={{ position: 'relative' }}>
-                      <input
-                        type={showJoinPassword ? 'text' : 'password'}
-                        required
-                        placeholder="Min 6 chars"
-                        value={joinPassword}
-                        onChange={(e) => setJoinPassword(e.target.value)}
-                        style={{
-                          width: '100%',
-                          padding: '0.7rem 2rem 0.7rem 0.85rem',
-                          background: 'var(--bg-primary)',
-                          border: '1px solid var(--border-color)',
-                          borderRadius: '10px',
-                          color: 'var(--text-main)',
-                          fontSize: '0.875rem',
-                          outline: 'none'
-                        }}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowJoinPassword(!showJoinPassword)}
-                        style={{
-                          position: 'absolute',
-                          right: '0.5rem',
-                          top: '50%',
-                          transform: 'translateY(-50%)',
-                          background: 'none',
-                          border: 'none',
-                          color: 'var(--text-muted)',
-                          cursor: 'pointer',
-                          padding: 0
-                        }}
-                      >
-                        {showJoinPassword ? <EyeOff size={14} /> : <Eye size={14} />}
-                      </button>
-                    </div>
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '0.35rem' }}>
-                      Confirm
-                    </label>
-                    <div style={{ position: 'relative' }}>
-                      <input
-                        type={showJoinConfirmPassword ? 'text' : 'password'}
-                        required
-                        placeholder="Re-enter"
-                        value={joinConfirmPassword}
-                        onChange={(e) => setJoinConfirmPassword(e.target.value)}
-                        style={{
-                          width: '100%',
-                          padding: '0.7rem 2rem 0.7rem 0.85rem',
-                          background: 'var(--bg-primary)',
-                          border: joinConfirmPassword && joinPassword !== joinConfirmPassword ? '1px solid #f43f5e' : '1px solid var(--border-color)',
-                          borderRadius: '10px',
-                          color: 'var(--text-main)',
-                          fontSize: '0.875rem',
-                          outline: 'none'
-                        }}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowJoinConfirmPassword(!showJoinConfirmPassword)}
-                        style={{
-                          position: 'absolute',
-                          right: '0.5rem',
-                          top: '50%',
-                          transform: 'translateY(-50%)',
-                          background: 'none',
-                          border: 'none',
-                          color: 'var(--text-muted)',
-                          cursor: 'pointer',
-                          padding: 0
-                        }}
-                      >
-                        {showJoinConfirmPassword ? <EyeOff size={14} /> : <Eye size={14} />}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Password match indicator */}
-                {joinConfirmPassword && (
-                  <div style={{
-                    fontSize: '0.725rem',
-                    marginBottom: '0.85rem',
-                    color: joinPassword === joinConfirmPassword ? '#10b981' : '#f43f5e',
-                    fontWeight: 600
-                  }}>
-                    {joinPassword === joinConfirmPassword ? '✓ Passwords match' : '✕ Passwords do not match'}
-                  </div>
-                )}
-
-                <div style={{ marginBottom: '1.25rem' }}>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '0.35rem' }}>
-                    Member Role
-                  </label>
-                  <select
-                    value={joinRole}
-                    onChange={(e) => setJoinRole(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '0.7rem 0.85rem',
-                      background: 'var(--bg-primary)',
-                      border: '1px solid var(--border-color)',
-                      borderRadius: '10px',
-                      color: 'var(--text-main)',
-                      fontSize: '0.875rem',
-                      outline: 'none'
-                    }}
-                  >
-                    <option value="child">Child / Dependent (Contributor)</option>
-                    <option value="parent">Parent / Co-Manager</option>
-                  </select>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  style={{
-                    width: '100%',
-                    padding: '0.85rem',
-                    borderRadius: '12px',
-                    border: 'none',
-                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                    color: '#ffffff',
-                    fontWeight: 700,
-                    fontSize: '0.925rem',
-                    cursor: loading ? 'not-allowed' : 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '0.5rem',
-                    boxShadow: '0 8px 18px rgba(16, 185, 129, 0.3)',
-                    opacity: loading ? 0.75 : 1
-                  }}
-                >
-                  <span>{loading ? 'Joining Family...' : 'Join Family Account'}</span>
-                  {!loading && <ArrowRight size={16} />}
-                </button>
-              </form>
-            )}
           </div>
         )}
       </div>
 
       {/* Footer Notice */}
       <div style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-subtle)', padding: '0.5rem' }}>
-        © 2026 OnePot • <em>"One family, one pot = No stories"</em> • Closed-Loop Academic Mock Ledger
+        © 2026 OnePot • An academic demonstration of a banking ledger; Real fund movement is not yet supported.
       </div>
     </div>
   );

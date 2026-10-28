@@ -13,28 +13,46 @@ USE onepot_db;
 CREATE TABLE IF NOT EXISTS families (
     id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
     family_name VARCHAR(100) NOT NULL,
-    invite_code VARCHAR(50) NOT NULL UNIQUE,
+    invite_code VARCHAR(12) NOT NULL UNIQUE,
+    created_by INT(11) DEFAULT NULL,
     total_pot_balance DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
     emergency_fund_balance DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
     auto_save_percentage DECIMAL(5, 2) NOT NULL DEFAULT 5.00,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- 2. users Table (RBAC: Parent Admins vs Child Restricted Contributors)
+-- 2. users Table (RBAC: Parent Admins vs Family Members)
 CREATE TABLE IF NOT EXISTS users (
     id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    family_id INT(11) NOT NULL,
+    family_id INT(11) DEFAULT NULL,
     first_name VARCHAR(100) NOT NULL,
     last_name VARCHAR(100) NOT NULL,
     email VARCHAR(255) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
-    role ENUM('parent', 'child') NOT NULL DEFAULT 'parent',
+    role ENUM('parent', 'member') NOT NULL DEFAULT 'member',
     avatar_url VARCHAR(255) DEFAULT '👑',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (family_id) REFERENCES families(id) ON DELETE CASCADE
+    FOREIGN KEY (family_id) REFERENCES families(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- 3. contributions Table (Tracks contributions only, preserving income privacy)
+-- Add Foreign Key for families.created_by to users.id
+ALTER TABLE families 
+    ADD CONSTRAINT fk_families_created_by 
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL;
+
+-- 3. family_members Table (Private Family Membership & Role Mapping)
+CREATE TABLE IF NOT EXISTS family_members (
+    id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    family_id INT(11) NOT NULL,
+    user_id INT(11) NOT NULL,
+    role_in_family ENUM('head', 'spouse', 'child') NOT NULL DEFAULT 'child',
+    joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (family_id) REFERENCES families(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE KEY uq_family_user (family_id, user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 4. contributions Table (Tracks contributions only, preserving income privacy)
 CREATE TABLE IF NOT EXISTS contributions (
     id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
     family_id INT(11) NOT NULL,

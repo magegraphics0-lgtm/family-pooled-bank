@@ -16,6 +16,7 @@ import { db } from '../services/db';
 import PooledFundCard from './PooledFundCard';
 import ExpenseFormModal from './ExpenseFormModal';
 import AllocationRequestModal from './AllocationRequestModal';
+import FamilyInviteCard from './FamilyInviteCard';
 
 export default function Dashboard({ currentUser, currentFamily, onDataChange, onNavigateTab }) {
   const [showExpenseModal, setShowExpenseModal] = useState(false);
@@ -34,7 +35,7 @@ export default function Dashboard({ currentUser, currentFamily, onDataChange, on
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [sortBy, setSortBy] = useState('newest');
 
-  const familyId = currentUser?.family_id || currentFamily?.family_id || 1;
+  const familyId = currentUser?.family_id || currentFamily?.family_id;
   const users = db.getUsers(familyId);
   const categories = db.getCategories();
   const pooledFund = db.getPooledFund(familyId);
@@ -145,6 +146,14 @@ export default function Dashboard({ currentUser, currentFamily, onDataChange, on
         onDataChange={onDataChange}
       />
 
+      {/* Parent Dashboard Card: Private Family Invite Code & Copy Invite Link Button */}
+      {currentUser?.role === 'parent' && (
+        <FamilyInviteCard 
+          currentFamily={currentFamily}
+          currentUser={currentUser}
+        />
+      )}
+
       {/* Quick Actions & High-level Financial Widgets (Dynamic Parent vs. Child Role Check) */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
@@ -152,60 +161,8 @@ export default function Dashboard({ currentUser, currentFamily, onDataChange, on
           <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
             {currentUser?.role === 'parent' 
               ? '👑 Parent Admin View: Full control to contribute & disburse pot funds'
-              : '🧑‍🎓 Child Contributor View: Contribute to pot & request fund allocations'}
+              : 'Child Contributor View: Contribute to pot & request fund allocations'}
           </span>
-        </div>
-
-        {/* Dynamic CTA Action Buttons */}
-        <div style={{ display: 'flex', gap: '0.65rem', flexWrap: 'wrap', alignItems: 'center' }}>
-          {/* Contribute to Pool Button (Available to both Parent and Child) */}
-          <button 
-            onClick={() => {
-              if (onNavigateTab) {
-                onNavigateTab('pool');
-              } else {
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-              }
-            }} 
-            className="btn btn-secondary"
-            style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
-          >
-            <ArrowUpRight size={16} color="#10b981" /> Contribute to Pool
-          </button>
-
-          {/* Dynamic Role Check: Parent View vs Child View */}
-          {currentUser?.role === 'parent' ? (
-            /* Parent View: Allocate Pooled Funds */
-            <button 
-              onClick={() => {
-                setAllocateError('');
-                setShowAllocateModal(true);
-              }} 
-              className="btn btn-accent"
-              style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
-              title="Allocate Pooled Funds"
-            >
-              <ArrowDownLeft size={16} /> Allocate Pooled Funds
-            </button>
-          ) : (
-            /* Child View: Replaces Allocate Pooled Funds with Request Fund Allocation */
-            <button 
-              onClick={() => setShowRequestModal(true)} 
-              className="btn btn-accent"
-              style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
-              title="Request Fund Allocation from Parent Admins"
-            >
-              <HandCoins size={16} /> Request Fund Allocation
-            </button>
-          )}
-
-          <button 
-            onClick={() => setShowExpenseModal(true)} 
-            className="btn btn-primary"
-            style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
-          >
-            <CreditCard size={16} /> + Log Expense
-          </button>
         </div>
       </div>
 
@@ -262,7 +219,7 @@ export default function Dashboard({ currentUser, currentFamily, onDataChange, on
             </div>
           </div>
           <div style={{ fontSize: '1.6rem', fontWeight: 800, fontFamily: 'Outfit, sans-serif', color: '#f59e0b' }}>
-            ₦{pooledFund.balance.toLocaleString()}
+            ₦{Number(pooledFund?.balance || 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
           </div>
           <span style={{ fontSize: '0.75rem', color: '#10b981' }}>100% transparent Family Pot</span>
         </div>
@@ -557,13 +514,19 @@ export default function Dashboard({ currentUser, currentFamily, onDataChange, on
                   <td colSpan={6} style={{ padding: '3.5rem 1rem', textAlign: 'center', color: 'var(--text-muted)' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
                       <Filter size={32} color="var(--text-subtle)" />
-                      <div style={{ fontSize: '0.95rem', fontWeight: 600 }}>No transactions match your filter criteria</div>
+                      <div style={{ fontSize: '0.95rem', fontWeight: 600 }}>
+                        {allHouseholdTransactions.length === 0 ? 'No transactions recorded yet' : 'No transactions match your filter criteria'}
+                      </div>
                       <p style={{ fontSize: '0.8rem', color: 'var(--text-subtle)', margin: 0 }}>
-                        Try clearing search terms or resetting filters to view all household financial records.
+                        {allHouseholdTransactions.length === 0 
+                          ? 'Contribute to the family pot or log a shared expense to begin your ledger.'
+                          : 'Try clearing search terms or resetting filters to view all household financial records.'}
                       </p>
-                      <button onClick={resetFilters} className="btn btn-secondary" style={{ marginTop: '0.5rem', fontSize: '0.8rem' }}>
-                        Reset Filters
-                      </button>
+                      {allHouseholdTransactions.length > 0 && (
+                        <button onClick={resetFilters} className="btn btn-secondary" style={{ marginTop: '0.5rem', fontSize: '0.8rem' }}>
+                          Reset Filters
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -612,9 +575,9 @@ export default function Dashboard({ currentUser, currentFamily, onDataChange, on
                 return;
               }
               try {
-                const targetBowl = categories.find(c => c.category_id === Number(directAllocateBowlId)) || categories[0];
+                const targetBowl = categories.find(c => (c.category_id || c.id) === Number(directAllocateBowlId)) || categories[0];
                 db.allocateFromPool(
-                  currentUser.user_id,
+                  currentUser.user_id || currentUser.id,
                   directAllocateAmount,
                   directAllocatePurpose || `Allocation for ${targetBowl?.category_name}`,
                   familyId
@@ -645,7 +608,7 @@ export default function Dashboard({ currentUser, currentFamily, onDataChange, on
 
                 <div className="form-group">
                   <label className="form-label">Available Pooled Balance</label>
-                  <input type="text" className="form-input" value={`₦${pooledFund.balance.toLocaleString()}`} disabled style={{ opacity: 0.7 }} />
+                  <input type="text" className="form-input" value={`₦${Number(pooledFund?.balance || 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}`} disabled style={{ opacity: 0.7 }} />
                 </div>
 
                 <div className="form-group">
@@ -656,7 +619,7 @@ export default function Dashboard({ currentUser, currentFamily, onDataChange, on
                     onChange={(e) => setDirectAllocateBowlId(e.target.value)}
                   >
                     {categories.map(c => (
-                      <option key={c.category_id} value={c.category_id}>
+                      <option key={c.category_id || c.id} value={c.category_id || c.id}>
                         {c.icon || '🍲'} {c.category_name}
                       </option>
                     ))}

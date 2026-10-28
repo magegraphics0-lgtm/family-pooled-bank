@@ -30,38 +30,52 @@ export default function PoolTransactionsLog({ transactions }) {
               </tr>
             </thead>
             <tbody>
-              {transactions.map(tx => {
-                const member = users.find(u => u.user_id === tx.user_id);
-                const isContribution = tx.type === 'contribution';
+              {transactions && transactions.length > 0 ? (
+                transactions.map(tx => {
+                  const member = users.find(u => (u.user_id || u.id) === tx.user_id);
+                  const isContribution = tx.type === 'contribution';
 
-                return (
-                  <tr key={tx.transaction_id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                    <td style={{ padding: '0.85rem 1rem', fontFamily: 'monospace', color: 'var(--text-subtle)' }}>
-                      #TX-00{tx.transaction_id}
-                    </td>
-                    <td style={{ padding: '0.85rem 1rem', color: 'var(--text-muted)' }}>
-                      {new Date(tx.created_at || tx.date).toLocaleString('en-NG')}
-                    </td>
-                    <td style={{ padding: '0.85rem 1rem' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
-                        <span>{member?.avatar || '👤'}</span> {member?.first_name} {member?.last_name}
-                      </div>
-                    </td>
-                    <td style={{ padding: '0.85rem 1rem' }}>
-                      <span className={`badge ${isContribution ? 'badge-parent' : 'badge-warning'}`}>
-                        {isContribution ? <ArrowUpRight size={14} /> : <ArrowDownLeft size={14} />}
-                        {isContribution ? 'Member Deposit' : 'Parent Allocation'}
-                      </span>
-                    </td>
-                    <td style={{ padding: '0.85rem 1rem', color: 'var(--text-main)' }}>
-                      {tx.purpose}
-                    </td>
-                    <td style={{ padding: '0.85rem 1rem', textAlign: 'right', fontWeight: 700, fontSize: '0.95rem', color: isContribution ? '#10b981' : '#f59e0b' }}>
-                      {isContribution ? '+' : '-'}₦{Number(tx.amount).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
-                    </td>
-                  </tr>
-                );
-              })}
+                  return (
+                    <tr key={tx.transaction_id || tx.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                      <td style={{ padding: '0.85rem 1rem', fontFamily: 'monospace', color: 'var(--text-subtle)' }}>
+                        #TX-00{tx.transaction_id || tx.id}
+                      </td>
+                      <td style={{ padding: '0.85rem 1rem', color: 'var(--text-muted)' }}>
+                        {new Date(tx.created_at || tx.date).toLocaleString('en-NG')}
+                      </td>
+                      <td style={{ padding: '0.85rem 1rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
+                          <span>{member?.avatar || '👤'}</span> {member?.first_name || 'Family'} {member?.last_name || 'Member'}
+                        </div>
+                      </td>
+                      <td style={{ padding: '0.85rem 1rem' }}>
+                        <span className={`badge ${isContribution ? 'badge-parent' : 'badge-warning'}`}>
+                          {isContribution ? <ArrowUpRight size={14} /> : <ArrowDownLeft size={14} />}
+                          {isContribution ? 'Member Deposit' : 'Parent Allocation'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '0.85rem 1rem', color: 'var(--text-main)' }}>
+                        {tx.purpose || 'Pot Transaction'}
+                      </td>
+                      <td style={{ padding: '0.85rem 1rem', textAlign: 'right', fontWeight: 700, fontSize: '0.95rem', color: isContribution ? '#10b981' : '#f59e0b' }}>
+                        {isContribution ? '+' : '-'}₦{Number(tx.amount || 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+                      </td>
+                    </tr>
+                  );
+                })
+              ) : (
+                <tr>
+                  <td colSpan={6} style={{ padding: '3.5rem 1rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                      <History size={32} color="var(--text-subtle)" />
+                      <div style={{ fontSize: '0.95rem', fontWeight: 600 }}>No transactions recorded yet</div>
+                      <p style={{ fontSize: '0.8rem', color: 'var(--text-subtle)', margin: 0 }}>
+                        Incoming pool contributions and parent-authorized allocations will be permanently logged here.
+                      </p>
+                    </div>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

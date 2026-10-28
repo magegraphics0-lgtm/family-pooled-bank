@@ -34,7 +34,7 @@ export default function Header({
 }) {
   const [showRoleMenu, setShowRoleMenu] = useState(false);
   const [showNotificationDrawer, setShowNotificationDrawer] = useState(false);
-  const familyName = currentFamily?.family_name || 'The Okafor Household';
+  const familyName = currentFamily?.family_name || 'Family Household';
 
   // Resolve relevant notifications based on RBAC role
   const isParent = currentUser?.role === 'parent';
@@ -54,7 +54,7 @@ export default function Header({
 
   const handleAcceptRequest = (requestId) => {
     try {
-      db.approveAllocation(requestId, currentUser?.user_id || 1);
+      db.approveAllocation(requestId, currentUser?.user_id || currentUser?.id);
       if (onDataChange) onDataChange();
     } catch (err) {
       alert(`Approval error: ${err.message}`);
@@ -63,7 +63,7 @@ export default function Header({
 
   const handleRejectRequest = (requestId) => {
     try {
-      db.rejectAllocation(requestId, currentUser?.user_id || 1);
+      db.rejectAllocation(requestId, currentUser?.user_id || currentUser?.id);
       if (onDataChange) onDataChange();
     } catch (err) {
       alert(`Rejection error: ${err.message}`);
@@ -72,7 +72,7 @@ export default function Header({
 
   const handleMarkAllRead = () => {
     try {
-      db.markAllNotificationsRead();
+      db.markAllNotificationsRead(currentFamily?.id || currentFamily?.family_id);
       if (onDataChange) onDataChange();
     } catch {
       // non-blocking
@@ -85,7 +85,7 @@ export default function Header({
       <div className="mock-ledger-banner">
         <Info size={14} style={{ color: 'var(--primary)', flexShrink: 0 }} />
         <span>
-          <strong>Academic Demo Notice:</strong> Closed-loop mock banking ledger for academic demonstration. Real fund movement is simulated via Paystack sandbox API and Mono API integration guidelines.
+          This site is an academic demonstration of a family banking ledger. Transactions are simulated using Paystack test mode as real fund movement is not yet supported.
         </span>
       </div>
 
@@ -416,7 +416,7 @@ export default function Header({
               <div style={{ textAlign: 'left', lineHeight: 1.1 }}>
                 <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>{currentUser.first_name} {currentUser.last_name}</div>
                 <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                  {currentUser.role === 'parent' ? '🛡️ Parent Admin' : '🧑‍🎓 Child Contributor'}
+                  {currentUser.role === 'parent' ? '🛡️ Parent Admin' : 'Child Contributor'}
                 </div>
               </div>
               <ChevronDown size={15} />

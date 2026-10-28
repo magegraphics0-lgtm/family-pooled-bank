@@ -60,42 +60,52 @@ export default function BudgetManager({ currentUser, onDataChange }) {
       )}
 
       <div className="grid-2">
-        {categories.map(cat => {
-          const limitObj = budgetLimits.find(b => b.category_id === cat.category_id);
-          const limitAmount = limitObj ? Number(limitObj.amount) : 0;
-          
-          const totalSpent = expenses
-            .filter(e => e.category_id === cat.category_id)
-            .reduce((sum, e) => sum + Number(e.amount), 0);
+        {categories.length === 0 ? (
+          <div className="glass-panel" style={{ padding: '3.5rem 1rem', textAlign: 'center', gridColumn: '1 / -1', color: 'var(--text-muted)' }}>
+            <PieChart size={36} color="var(--text-subtle)" style={{ margin: '0 auto 0.75rem auto', display: 'block' }} />
+            <div style={{ fontSize: '1rem', fontWeight: 700 }}>No Smart Bowls Configured Yet</div>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-subtle)', marginTop: '0.25rem' }}>
+              Smart Bowls categorize household expenses and track monthly spending limits.
+            </p>
+          </div>
+        ) : (
+          categories.map(cat => {
+            const catId = cat.category_id || cat.id;
+            const limitObj = budgetLimits.find(b => (b.category_id || b.limit_id) === catId);
+            const limitAmount = limitObj ? Number(limitObj.amount) : Number(cat.allocated_amount || 0);
+            
+            const totalSpent = expenses
+              .filter(e => (e.category_id || e.bowl_id) === catId)
+              .reduce((sum, e) => sum + Number(e.amount), 0);
 
-          const remainingAmount = Math.max(limitAmount - totalSpent, 0);
-          const percent = limitAmount > 0 ? Math.round((totalSpent / limitAmount) * 100) : 0;
-          const isEditing = editingCategoryId === cat.category_id;
+            const remainingAmount = Math.max(limitAmount - totalSpent, 0);
+            const percent = limitAmount > 0 ? Math.round((totalSpent / limitAmount) * 100) : 0;
+            const isEditing = editingCategoryId === catId;
 
-          return (
-            <div key={cat.category_id} className="glass-panel" style={{ padding: '1.35rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.85rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                  <span style={{ fontSize: '1.6rem' }}>{cat.icon}</span>
-                  <div>
-                    <h3 style={{ fontSize: '1rem', fontWeight: 700 }}>{cat.category_name}</h3>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Period: Monthly</span>
+            return (
+              <div key={catId} className="glass-panel" style={{ padding: '1.35rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.85rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                    <span style={{ fontSize: '1.6rem' }}>{cat.icon || '🍲'}</span>
+                    <div>
+                      <h3 style={{ fontSize: '1rem', fontWeight: 700 }}>{cat.category_name}</h3>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Period: Monthly</span>
+                    </div>
                   </div>
-                </div>
 
-                {isParent && !isEditing && (
-                  <button 
-                    onClick={() => {
-                      setEditingCategoryId(cat.category_id);
-                      setNewLimitAmount(limitAmount);
-                    }}
-                    className="btn btn-secondary"
-                    style={{ padding: '0.35rem 0.75rem', fontSize: '0.78rem' }}
-                  >
-                    Edit Cap
-                  </button>
-                )}
-              </div>
+                  {isParent && !isEditing && (
+                    <button 
+                      onClick={() => {
+                        setEditingCategoryId(catId);
+                        setNewLimitAmount(limitAmount);
+                      }}
+                      className="btn btn-secondary"
+                      style={{ padding: '0.35rem 0.75rem', fontSize: '0.78rem' }}
+                    >
+                      Edit Cap
+                    </button>
+                  )}
+                </div>
 
               {isEditing ? (
                 <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
@@ -180,8 +190,9 @@ export default function BudgetManager({ currentUser, onDataChange }) {
               )}
             </div>
           );
-        })}
-      </div>
+        })
+      )}
+    </div>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Landmark, ArrowUpRight, ArrowDownLeft, Shield, CheckCircle, CreditCard, HandCoins } from 'lucide-react';
+import { Landmark, ArrowDown, Shield, CheckCircle, HandCoins } from 'lucide-react';
 import { db } from '../services/db';
 import { SMTPNotificationService } from '../services/smtpService';
 import DepositAccountModal from './DepositAccountModal';
@@ -42,7 +42,8 @@ export default function PooledFundCard({ currentUser, poolData, transactions, on
     }
 
     try {
-      db.contributeToPool(currentUser.user_id, contributeAmount, contributePurpose || 'Monthly Pooled Contribution', currentUser?.family_id);
+      const uId = currentUser.user_id || currentUser.id;
+      db.contributeToPool(uId, contributeAmount, contributePurpose || 'Monthly Pooled Contribution', currentUser?.family_id);
       const updatedPool = db.getPooledFund(currentUser?.family_id);
       
       // Dispatch automated SMTP notification
@@ -81,7 +82,8 @@ export default function PooledFundCard({ currentUser, poolData, transactions, on
     }
 
     try {
-      db.allocateFromPool(currentUser.user_id, allocateAmount, allocatePurpose, currentUser?.family_id);
+      const uId = currentUser.user_id || currentUser.id;
+      db.allocateFromPool(uId, allocateAmount, allocatePurpose, currentUser?.family_id);
       const updatedPool = db.getPooledFund(currentUser?.family_id);
 
       // Dispatch automated SMTP notification
@@ -117,35 +119,26 @@ export default function PooledFundCard({ currentUser, poolData, transactions, on
           {/* Shared Balance Display */}
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-muted)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, marginBottom: '0.35rem' }}>
-              <Landmark size={18} color="#10b981" /> Shared Family Pot Balance
+              <Landmark size={18} color="#10b981" /> Shared Family Pooled Balance
             </div>
             <div style={{ fontSize: '2.5rem', fontWeight: 800, fontFamily: 'Outfit, sans-serif', color: '#ffffff', letterSpacing: '-0.02em', display: 'flex', alignItems: 'baseline', gap: '0.35rem' }}>
               <span style={{ color: '#10b981', fontSize: '2rem' }}>₦</span>
-              {poolData.balance.toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+              {Number(poolData?.balance || 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
             </div>
             <div style={{ fontSize: '0.78rem', color: 'var(--text-subtle)', marginTop: '0.25rem' }}>
-              Last activity recorded: {new Date(poolData.last_updated).toLocaleString('en-NG')}
+              Last activity recorded: {poolData?.last_updated ? new Date(poolData.last_updated).toLocaleString('en-NG') : 'No activity yet'}
             </div>
           </div>
 
           {/* Action Buttons */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', flexWrap: 'wrap' }}>
-            {/* Send Money Button */}
-            <button
-              onClick={() => setShowBankModal(true)}
-              className="btn btn-secondary"
-              style={{ padding: '0.75rem 1.2rem', fontSize: '0.9rem' }}
-            >
-              <CreditCard size={18} color="#10b981" /> Send Money
-            </button>
-
             {/* Contribute to Pool Button - Visible to All Roles */}
             <button 
               onClick={() => { setErrorMsg(''); setShowContributeModal(true); }} 
               className="btn btn-primary"
               style={{ padding: '0.75rem 1.4rem', fontSize: '0.95rem' }}
             >
-              <ArrowUpRight size={20} /> Contribute to Pool
+              <ArrowDown size={20} /> Contribute to Pool
             </button>
 
             {/* Dynamic RBAC Action: Parent View vs Child View */}
@@ -160,7 +153,7 @@ export default function PooledFundCard({ currentUser, poolData, transactions, on
                 style={{ padding: '0.75rem 1.4rem', fontSize: '0.95rem' }}
                 title="Allocate Pooled Funds"
               >
-                <ArrowDownLeft size={20} /> Allocate Pooled Funds
+                <ArrowDown size={20} /> Allocate Pooled Funds
               </button>
             ) : (
               /* Child View: Replaces Allocate Pooled Funds with Request Fund Allocation */
@@ -210,7 +203,7 @@ export default function PooledFundCard({ currentUser, poolData, transactions, on
           <div className="modal-content">
             <div className="modal-header">
               <h3 style={{ fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <ArrowUpRight color="#10b981" /> Contribute to Shared Pooled Bank
+                <ArrowDown color="#10b981" /> Contribute to Shared Pooled Bank
               </h3>
               <button onClick={() => setShowContributeModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
             </div>
@@ -290,7 +283,7 @@ export default function PooledFundCard({ currentUser, poolData, transactions, on
           <div className="modal-content">
             <div className="modal-header">
               <h3 style={{ fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <ArrowDownLeft color="#f59e0b" /> Allocate Pooled Funds (Parent Manager)
+                <ArrowDown color="#f59e0b" /> Allocate Pooled Funds (Parent Manager)
               </h3>
               <button onClick={() => setShowAllocateModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
             </div>

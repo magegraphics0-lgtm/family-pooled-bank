@@ -5,7 +5,7 @@ import { SMTPNotificationService } from '../services/smtpService';
 
 export default function ExpenseFormModal({ currentUser, isOpen, onClose, onExpenseAdded }) {
   const categories = db.getCategories();
-  const [categoryId, setCategoryId] = useState('1');
+  const [categoryId, setCategoryId] = useState(() => (categories[0]?.category_id || categories[0]?.id || 1));
   const [amount, setAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('Bank Transfer');
   const [dateSpent, setDateSpent] = useState(new Date().toISOString().split('T')[0]);
@@ -29,8 +29,8 @@ export default function ExpenseFormModal({ currentUser, isOpen, onClose, onExpen
     try {
       // 1. Add expense to database (Table 3.5)
       const newExpense = db.addExpense({
-        user_id: currentUser.user_id,
-        family_id: currentUser.family_id || 1,
+        user_id: currentUser.user_id || currentUser.id,
+        family_id: currentUser.family_id,
         category_id: Number(categoryId),
         amount: parseFloat(amount),
         payment_method: PaymentMethodFormatter(paymentMethod),
@@ -40,9 +40,9 @@ export default function ExpenseFormModal({ currentUser, isOpen, onClose, onExpen
 
       // 2. Compute updated category total
       const allExpenses = db.getExpenses(currentUser.family_id);
-      const selectedCategory = categories.find(c => c.category_id === Number(categoryId));
+      const selectedCategory = categories.find(c => (c.category_id || c.id) === Number(categoryId));
       const categoryTotal = allExpenses
-        .filter(ex => ex.category_id === Number(categoryId))
+        .filter(ex => (ex.category_id || ex.bowl_id) === Number(categoryId))
         .reduce((sum, ex) => sum + Number(ex.amount), 0);
 
       // 3. Evaluate Budget Alert via SMTP service
@@ -126,8 +126,8 @@ export default function ExpenseFormModal({ currentUser, isOpen, onClose, onExpen
                   onChange={(e) => setCategoryId(e.target.value)}
                 >
                   {categories.map(cat => (
-                    <option key={cat.category_id} value={cat.category_id}>
-                      {cat.icon} {cat.category_name}
+                    <option key={cat.category_id || cat.id} value={cat.category_id || cat.id}>
+                      {cat.icon || '🍲'} {cat.category_name}
                     </option>
                   ))}
                 </select>

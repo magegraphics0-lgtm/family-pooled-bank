@@ -43,12 +43,12 @@ export default function AllocationRequestModal({
     setIsSubmitting(true);
 
     try {
-      const selectedCategory = categories.find(c => c.category_id === Number(selectedBowlId));
+      const selectedCategory = categories.find(c => (c.category_id || c.id) === Number(selectedBowlId));
       const bowlName = selectedCategory ? selectedCategory.category_name : 'Smart Bowl';
 
       db.requestAllocation({
-        familyId: currentUser?.family_id || 1,
-        childId: currentUser?.user_id || 1,
+        familyId: currentUser?.family_id,
+        childId: currentUser?.user_id || currentUser?.id,
         bowlId: Number(selectedBowlId),
         amount: numAmount,
         description: description.trim()
@@ -150,7 +150,7 @@ export default function AllocationRequestModal({
                 required
               >
                 {categories.map(cat => (
-                  <option key={cat.category_id} value={cat.category_id}>
+                  <option key={cat.category_id || cat.id} value={cat.category_id || cat.id}>
                     {cat.icon || '🍲'} {cat.category_name}
                   </option>
                 ))}

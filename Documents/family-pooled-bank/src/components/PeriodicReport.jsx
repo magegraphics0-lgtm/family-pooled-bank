@@ -99,29 +99,38 @@ export default function PeriodicReport({ currentUser, currentFamily }) {
             </tr>
           </thead>
           <tbody>
-            {categories.map(cat => {
-              const limitObj = budgetLimits.find(b => b.category_id === cat.category_id);
-              const limit = limitObj ? Number(limitObj.amount) : 0;
-              const spent = expenses.filter(e => e.category_id === cat.category_id).reduce((s, e) => s + Number(e.amount), 0);
-              const variance = limit - spent;
-              const isOver = spent > limit && limit > 0;
+            {categories.length > 0 ? (
+              categories.map(cat => {
+                const catId = cat.category_id || cat.id;
+                const limitObj = budgetLimits.find(b => (b.category_id || b.limit_id) === catId);
+                const limit = limitObj ? Number(limitObj.amount) : Number(cat.allocated_amount || 0);
+                const spent = expenses.filter(e => (e.category_id || e.bowl_id) === catId).reduce((s, e) => s + Number(e.amount), 0);
+                const variance = limit - spent;
+                const isOver = spent > limit && limit > 0;
 
-              return (
-                <tr key={cat.category_id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                  <td style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>{cat.icon} {cat.category_name}</td>
-                  <td style={{ padding: '0.75rem 1rem' }}>₦{limit.toLocaleString()}</td>
-                  <td style={{ padding: '0.75rem 1rem' }}>₦{spent.toLocaleString()}</td>
-                  <td style={{ padding: '0.75rem 1rem', color: variance < 0 ? '#f43f5e' : '#10b981' }}>
-                    {variance < 0 ? `-₦${Math.abs(variance).toLocaleString()}` : `+₦${variance.toLocaleString()}`}
-                  </td>
-                  <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>
-                    <span className={`badge ${isOver ? 'badge-danger' : 'badge-parent'}`}>
-                      {isOver ? 'Exceeded Cap' : 'Within Budget'}
-                    </span>
-                  </td>
-                </tr>
-              );
-            })}
+                return (
+                  <tr key={catId} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                    <td style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>{cat.icon || '🍲'} {cat.category_name}</td>
+                    <td style={{ padding: '0.75rem 1rem' }}>₦{limit.toLocaleString()}</td>
+                    <td style={{ padding: '0.75rem 1rem' }}>₦{spent.toLocaleString()}</td>
+                    <td style={{ padding: '0.75rem 1rem', color: variance < 0 ? '#f43f5e' : '#10b981' }}>
+                      {variance < 0 ? `-₦${Math.abs(variance).toLocaleString()}` : `+₦${variance.toLocaleString()}`}
+                    </td>
+                    <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>
+                      <span className={`badge ${isOver ? 'badge-danger' : 'badge-parent'}`}>
+                        {isOver ? 'Exceeded Cap' : 'Within Budget'}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })
+            ) : (
+              <tr>
+                <td colSpan={5} style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  No smart bowls configured yet for variance analysis.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
 
@@ -138,21 +147,30 @@ export default function PeriodicReport({ currentUser, currentFamily }) {
             </tr>
           </thead>
           <tbody>
-            {users.map(u => {
-              const memberIncome = incomes.filter(i => i.user_id === u.user_id).reduce((s, i) => s + Number(i.amount), 0);
-              const memberExpense = expenses.filter(e => e.user_id === u.user_id).reduce((s, e) => s + Number(e.amount), 0);
-              const memberDeposits = poolTx.filter(t => t.user_id === u.user_id && t.type === 'contribution').reduce((s, t) => s + Number(t.amount), 0);
+            {users.length > 0 ? (
+              users.map(u => {
+                const uId = u.user_id || u.id;
+                const memberIncome = incomes.filter(i => (i.user_id || i.id) === uId).reduce((s, i) => s + Number(i.amount), 0);
+                const memberExpense = expenses.filter(e => (e.user_id || e.id) === uId).reduce((s, e) => s + Number(e.amount), 0);
+                const memberDeposits = poolTx.filter(t => (t.user_id || t.id) === uId && t.type === 'contribution').reduce((s, t) => s + Number(t.amount), 0);
 
-              return (
-                <tr key={u.user_id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                  <td style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>{u.avatar} {u.first_name} {u.last_name}</td>
-                  <td style={{ padding: '0.75rem 1rem', textTransform: 'uppercase', fontSize: '0.75rem' }}>{u.role}</td>
-                  <td style={{ padding: '0.75rem 1rem', color: '#10b981' }}>₦{memberIncome.toLocaleString()}</td>
-                  <td style={{ padding: '0.75rem 1rem', color: '#f43f5e' }}>₦{memberExpense.toLocaleString()}</td>
-                  <td style={{ padding: '0.75rem 1rem', textAlign: 'right', color: '#f59e0b', fontWeight: 700 }}>₦{memberDeposits.toLocaleString()}</td>
-                </tr>
-              );
-            })}
+                return (
+                  <tr key={uId} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                    <td style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>{u.avatar || '👤'} {u.first_name} {u.last_name || ''}</td>
+                    <td style={{ padding: '0.75rem 1rem', textTransform: 'uppercase', fontSize: '0.75rem' }}>{u.role}</td>
+                    <td style={{ padding: '0.75rem 1rem', color: '#10b981' }}>₦{memberIncome.toLocaleString()}</td>
+                    <td style={{ padding: '0.75rem 1rem', color: '#f43f5e' }}>₦{memberExpense.toLocaleString()}</td>
+                    <td style={{ padding: '0.75rem 1rem', textAlign: 'right', color: '#f59e0b', fontWeight: 700 }}>₦{memberDeposits.toLocaleString()}</td>
+                  </tr>
+                );
+              })
+            ) : (
+              <tr>
+                <td colSpan={5} style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  No family members recorded in this household yet.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

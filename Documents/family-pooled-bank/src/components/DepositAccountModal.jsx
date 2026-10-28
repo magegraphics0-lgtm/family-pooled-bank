@@ -45,8 +45,8 @@ export default function DepositAccountModal({ currentUser, isOpen, onClose, onAc
     try {
       setError('');
       db.addDepositAccount({
-        familyId: currentUser?.family_id || 1,
-        userId: currentUser?.user_id || 1,
+        familyId: currentUser?.family_id,
+        userId: currentUser?.user_id || currentUser?.id,
         bankName: finalBank,
         accountNumber,
         accountName,

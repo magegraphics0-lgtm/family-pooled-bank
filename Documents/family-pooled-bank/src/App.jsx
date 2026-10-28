@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import Header from './components/Header';
 import Dashboard from './components/Dashboard';
 import PooledFundCard from './components/PooledFundCard';
@@ -7,9 +8,12 @@ import PoolTransactionsLog from './components/PoolTransactionsLog';
 import PeriodicReport from './components/PeriodicReport';
 import LandingPage from './components/LandingPage';
 import AuthModal from './components/AuthModal';
+import RegisterPage from './components/RegisterPage';
 import { db } from './services/db';
 
 export default function App() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const initialSession = db.getCurrentSession();
   
   // Theme Engine State - Persisted in localStorage with system preference fallback
@@ -45,16 +49,41 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(initialSession?.user || null);
   const [currentFamily, setCurrentFamily] = useState(initialSession?.family || null);
   
-  // Dedicated Initial Boot State: Always boots directly to Landing Page
-  const [currentView, setCurrentView] = useState('landing'); // 'landing' | 'auth' | 'app'
-  const [authInitialTab, setAuthInitialTab] = useState('login'); // 'login' | 'register-family' | 'join-family'
+  // Dedicated Initial Boot State: Always boots directly to Landing Page unless /register is requested
+  const [currentView, setCurrentView] = useState(() => {
+    if (window.location.pathname === '/register' || window.location.search.includes('invite=')) {
+      return 'register';
+    }
+    return 'landing';
+  });
+  const [authInitialTab, setAuthInitialTab] = useState('login'); // 'login' | 'register-family'
   
   // Dashboard Navigation Tab State (defaults to 'dashboard')
   const [activeTab, setActiveTab] = useState('dashboard');
   const [, setDbTick] = useState(0); // Trigger re-render on database updates
   const [notifications, setNotifications] = useState(db.getNotifications(initialSession?.user?.family_id));
 
-  const handleDataChange = () => {
+  // Listen to browser path changes
+  useEffect(() => {
+    if (location.pathname === '/register' || location.search.includes('invite=')) {
+      setCurrentView('register');
+    }
+  }, [location.pathname, location.search]);
+
+  // Synchronize live financial data from backend MySQL on load and whenever family changes
+  useEffect(() => {
+    if (currentUser?.family_id) {
+      db.syncFromBackend(currentUser.family_id).then(() => {
+        setNotifications(db.getNotifications(currentUser.family_id));
+        setDbTick(prev => prev + 1);
+      });
+    }
+  }, [currentUser?.family_id]);
+
+  const handleDataChange = async () => {
+    if (currentUser?.family_id) {
+      await db.syncFromBackend(currentUser.family_id);
+    }
     setDbTick(prev => prev + 1);
     setNotifications(db.getNotifications(currentUser?.family_id));
   };
@@ -62,24 +91,36 @@ export default function App() {
   const handleNavigateToLogin = () => {
     setAuthInitialTab('login');
     setCurrentView('auth');
+    if (location.pathname !== '/') navigate('/');
   };
 
   const handleNavigateToRegister = () => {
     setAuthInitialTab('register-family');
     setCurrentView('auth');
+    if (location.pathname !== '/') navigate('/');
+  };
+
+  const handleNavigateToMemberRegister = () => {
+    setCurrentView('register');
+    if (location.pathname !== '/register') navigate('/register');
   };
 
   const handleBackToLanding = () => {
     setCurrentView('landing');
+    if (location.pathname !== '/') navigate('/');
   };
 
-  const handleLoginSuccess = (user, family) => {
+  const handleLoginSuccess = async (user, family) => {
     setCurrentUser(user);
     setCurrentFamily(family);
+    if (user?.family_id) {
+      await db.syncFromBackend(user.family_id);
+    }
     setNotifications(db.getNotifications(user?.family_id));
     setDbTick(prev => prev + 1);
     setActiveTab('dashboard');
     setCurrentView('app');
+    if (location.pathname !== '/') navigate('/');
   };
 
   const handleLogout = () => {
@@ -87,17 +128,34 @@ export default function App() {
     setCurrentUser(null);
     setCurrentFamily(null);
     setCurrentView('landing');
+    if (location.pathname !== '/') navigate('/');
   };
 
   const pooledFund = db.getPooledFund(currentUser?.family_id);
   const poolTransactions = db.getPoolTransactions(currentUser?.family_id);
 
-  // VIEW 1: Dedicated Landing Page Boot View
+  // VIEW 1: Dedicated Member Registration View (/register?invite=CODE)
+  const isRegisterRoute = currentView === 'register' || location.pathname === '/register' || location.search.includes('invite=');
+  if (isRegisterRoute && currentView !== 'app') {
+    return (
+      <RegisterPage 
+        onRegisterSuccess={handleLoginSuccess}
+        onNavigateToLogin={handleNavigateToLogin}
+        onNavigateToParentRegister={handleNavigateToRegister}
+        onBackToLanding={handleBackToLanding}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+      />
+    );
+  }
+
+  // VIEW 2: Dedicated Landing Page Boot View
   if (currentView === 'landing') {
     return (
       <LandingPage 
         onNavigateToLogin={handleNavigateToLogin}
         onNavigateToRegister={handleNavigateToRegister}
+        onNavigateToMemberRegister={handleNavigateToMemberRegister}
         onGoToDashboard={() => setCurrentView('app')}
         currentUser={currentUser}
         theme={theme}
@@ -106,7 +164,7 @@ export default function App() {
     );
   }
 
-  // VIEW 2: Authentication Screen (Centralized Minimalist Card View)
+  // VIEW 3: Authentication Screen (Centralized Minimalist Card View)
   if (currentView === 'auth' || !currentUser) {
     return (
       <AuthModal 
@@ -199,10 +257,10 @@ export default function App() {
           gap: '0.75rem' 
         }}>
           <div>
-            © 2026 <strong>OnePot</strong> • <em>"One family, one pot = No stories"</em>
+            © 2026 <strong>OnePot</strong>
           </div>
           <div style={{ fontSize: '0.775rem' }}>
-            Closed-loop mock banking ledger for academic demonstration. Real fund movement simulated via Paystack & Mono API.
+            An academic demonstration of a banking ledger; Real fund movement is not yet supported.
           </div>
         </div>
       </footer>

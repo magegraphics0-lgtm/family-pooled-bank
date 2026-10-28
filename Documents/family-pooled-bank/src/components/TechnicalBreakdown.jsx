@@ -52,12 +52,12 @@ export default function TechnicalBreakdown() {
     { element: 'Currency Identifier', value: '🇳🇬 NGN (₦)', file: 'src/components/Header.jsx', line: 55, desc: 'Nigerian Naira currency flag and symbol badge' },
     { element: 'Auth Modal App Header', value: 'NaijaFamily Pooled Bank', file: 'src/components/AuthModal.jsx', line: '187-192', desc: 'Welcome title on login and registration screens' },
     { element: 'Auth Modal Subtitle', value: 'Household Financial Planning & Collective Shared Vaults', file: 'src/components/AuthModal.jsx', line: 191, desc: 'Mission tagline under auth modal logo' },
-    { element: 'Shared Vault Display Name', value: 'Shared Family Pot Balance', file: 'src/components/PooledFundCard.jsx', line: 118, desc: 'Central banner heading on shared pot card' },
+    { element: 'Shared Vault Display Name', value: 'Shared Family Pooled Balance', file: 'src/components/PooledFundCard.jsx', line: 118, desc: 'Central banner heading on shared pot card' },
     { element: 'Footer Copyright & Brand', value: 'NaijaFamily Pooled Bank & Family Financial Planner', file: 'src/App.jsx', line: 130, desc: 'Persistent footer notice with Nigerian household context' },
     { element: 'Footer Architecture Stack', value: 'Built with React, Node.js REST Architecture, Chart.js & Nodemailer', file: 'src/App.jsx', line: 133, desc: 'System stack credits in main footer' },
     { element: 'Seed Family Name', value: 'Demo Family', file: 'src/services/db.js', line: 13, desc: 'Initial database seed family profile' },
     { element: 'Seed Parent Profile', value: 'Demo Parent (Role: parent, 👑)', file: 'src/services/db.js', line: '21-27', desc: 'Admin account with full pool allocation rights' },
-    { element: 'Seed Child Profile', value: 'Demo Child (Role: child, 🧑‍🎓)', file: 'src/services/db.js', line: '32-38', desc: 'Restricted member with deposit & viewing rights' },
+    { element: 'Seed Child Profile', value: 'Demo Child (Role: child, 👤)', file: 'src/services/db.js', line: '32-38', desc: 'Restricted member with deposit & viewing rights' },
     { element: 'Package System Name', value: 'family-pooled-bank', file: 'package.json', line: 2, desc: 'Node package identifier in package.json' },
   ];
 

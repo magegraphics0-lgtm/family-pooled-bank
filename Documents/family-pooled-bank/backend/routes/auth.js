@@ -3,20 +3,27 @@ const router = express.Router();
 const authController = require('../controllers/authController');
 
 /**
- * Authentication & Family Membership Routes
+ * Authentication & Private Family Membership Routes
  * Base: /api/auth
  */
 
 // User login endpoint (dispatches async login security email alert)
 router.post('/login', authController.login);
 
-// Register new family account & admin (dispatches async welcome email with invite code)
-router.post('/register-family', authController.registerFamily);
+// Current session endpoint
+router.get('/me', authController.getMe);
 
-// Join existing family pot via invite code (dispatches async welcome email)
-router.post('/join-family', authController.joinFamily);
+// Parent Registration (Hashes password, role = 'parent', generates FAM-XXXXXX invite code, creates family, adds to family_members as 'head', dispatches welcome email)
+router.post('/register-parent', authController.registerParent);
 
-// Request password reset email / OTP (dispatches async reset email, handles errors silently)
+// Member Registration (Validates invite_code, role = 'member', links to family_members, dispatches welcome email)
+router.post('/register-member', authController.registerMember);
+
+// Backward-compatibility aliases
+router.post('/register-family', authController.registerParent);
+router.post('/join-family', authController.registerMember);
+
+// Request password reset email / OTP
 router.post('/forgot-password', authController.forgotPassword);
 
 module.exports = router;

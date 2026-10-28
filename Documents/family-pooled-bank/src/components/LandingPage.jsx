@@ -12,12 +12,14 @@ import {
   CheckCircle2,
   Lock,
   ChevronRight,
-  Sparkles
+  Sparkles,
+  Users
 } from 'lucide-react';
 
 export default function LandingPage({
   onNavigateToLogin,
   onNavigateToRegister,
+  onNavigateToMemberRegister,
   onGoToDashboard,
   currentUser,
   theme = 'light',
@@ -47,7 +49,7 @@ export default function LandingPage({
       }}>
         <Info size={14} style={{ color: 'var(--primary)', flexShrink: 0 }} />
         <span>
-          <strong>Academic Demo Notice:</strong> Closed-loop mock banking ledger for academic demonstration. Real fund movement is simulated via Paystack sandbox API and Mono API integration guidelines.
+          This site is an academic demonstration of a family banking ledger. Transactions are simulated using Paystack test mode as real fund movement is not yet supported.
         </span>
       </div>
 
@@ -204,7 +206,7 @@ export default function LandingPage({
           marginBottom: '1.5rem'
         }}>
           <Sparkles size={15} />
-          <span>Digital Family Financial Collective</span>
+          <span>Digital family financial planner</span>
         </div>
 
         <h1 style={{
@@ -233,7 +235,7 @@ export default function LandingPage({
           maxWidth: '640px',
           margin: '0 auto 2.5rem auto'
         }}>
-          Consolidate household funds, manage shared groceries, automate monthly contributions, and eliminate awkward money conversations with automated budgets & alerts.
+          Pool funds together, manage shared expenses, and promote transparency, trust, and accountability within your family.
         </p>
 
         {/* Action CTAs */}
@@ -283,6 +285,28 @@ export default function LandingPage({
             <LogIn size={18} />
             <span>Sign In to Household</span>
           </button>
+
+          {onNavigateToMemberRegister && (
+            <button
+              type="button"
+              id="hero-join-invite-cta"
+              onClick={onNavigateToMemberRegister}
+              className="btn btn-secondary"
+              style={{
+                padding: '0.9rem 1.75rem',
+                fontSize: '1.05rem',
+                fontWeight: 600,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.55rem',
+                borderRadius: '14px',
+                border: '1px dashed var(--primary)'
+              }}
+            >
+              <Users size={18} color="var(--primary)" />
+              <span>Have an Invite Code?</span>
+            </button>
+          )}
         </div>
 
         {/* Trust Highlights */}
@@ -554,10 +578,10 @@ export default function LandingPage({
           gap: '1rem'
         }}>
           <div>
-            © 2026 <strong>OnePot</strong> • <em>"One family, one pot = No stories"</em>
+            © 2026 <strong>OnePot</strong>
           </div>
           <div style={{ fontSize: '0.75rem' }}>
-            Closed-loop mock banking ledger for academic demonstration. Real fund movement simulated via Paystack & Mono API.
+            An academic demonstration of a banking ledger; Real fund movement is not yet supported.
           </div>
         </div>
       </footer>

@@ -1,922 +1,560 @@
-# 📖 Comprehensive Technical Documentation & Architecture Manual
-## NaijaFamily Pooled Bank & Household Financial Planner
+# 🍲 OnePot (Family Pooled Bank) — Technical Documentation & Study Guide
+### *Academic Reference Manual & System Architecture Specification*
 
 ---
 
-## 1. 🌟 System Overview & Architecture
+## 1. 🏛️ High-Level Architecture & Tech Stack
 
-**NaijaFamily Pooled Bank** is a web application engineered for Nigerian households. It addresses multi-earner family financial coordination, collective savings (Family Pot shared vault accounts), budget cap enforcement, and automated email alerts.
+OnePot is an academic demonstration and full-stack software prototype of a **closed-loop family pooled banking ledger and financial planning system**. It addresses multi-earner household financial friction, collective emergency savings, and child-to-parent fund request governance within formal and informal family units.
 
-### System Architecture
-The application uses a **Tiered Client-Server Architecture**:
 ```
-┌─────────────────────────────────────────────────────────┐
-│              PRESENTATION TIER (Frontend)               │
-│  React 19 • Vite • Chart.js • Lucide Icons • CSS Modules│
-└────────────────────────────┬────────────────────────────┘
-                             │ REST HTTP (JSON) / Local Fallback
-┌────────────────────────────▼────────────────────────────┐
-│              APPLICATION TIER (Backend REST API)        │
-│  Node.js • Express.js • Nodemailer SMTP Dispatch Engine │
-└────────────────────────────┬────────────────────────────┘
-                             │ In-Memory / LocalStorage Persistence
-┌────────────────────────────▼────────────────────────────┐
-│              DATABASE TIER (Data Schemas)               │
-│  MySQL Database Schema (Tables 3.1 - 3.9)               │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                       PRESENTATION LAYER (Frontend)                     │
+│  React 19 • Vite • Lucide Icons • Responsive Glassmorphic Design System │
+│  State: React Hooks (useState, useEffect, useCallback) + db.js Service │
+└────────────────────────────────────┬────────────────────────────────────┘
+                                     │ JSON over HTTPS (REST API)
+                                     ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                     APPLICATION LAYER (Node.js & Express)               │
+│  Modular Routers: /api/auth, /api/family, /api/payments, /api/allocations│
+│  Security: bcryptjs (salted hashing) • CORS • Input Validation          │
+│  Notification Engine: Asynchronous Nodemailer SMTP Services             │
+│  Payment Gateway: Paystack Sandbox API (Simulated Webhook / Callback)   │
+└────────────────────────────────────┬────────────────────────────────────┘
+                                     │ Connection Pool (mysql2/promise)
+                                     ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                   PERSISTENCE LAYER (Aiven Cloud MySQL)                 │
+│  Managed MySQL 8.0 • InnoDB Engine • Strict UTF-8 (utf8mb4)             │
+│  9 Relational Tables with Referential Integrity & Foreign Key Cascades │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Complete Technology Stack
+
+| Layer | Technology | Key Modules / Libraries | Purpose in Ecosystem |
+| :--- | :--- | :--- | :--- |
+| **Frontend UI** | React 19.x, Vite 8.x | `lucide-react`, `react-router-dom` | Reactive component rendering, client routing, view-switching, modal forms, and real-time ledger audit views. |
+| **Styling & Theme** | CSS Variables, Glassmorphism | Custom design tokens (`src/index.css`) | Light/Dark theme switching engine, Emerald Green palette (`#10b981`), high-contrast slate surfaces. |
+| **Client Cache** | `localStorage` API | `LocalDatabase` class (`src/services/db.js`) | Offline session caching, client-side optimistic UI updates, and background synchronization via `syncFromBackend`. |
+| **Backend REST API**| Node.js 20+, Express 5.x | `cors`, `dotenv`, `crypto` | Modular REST API routing, session management, RBAC enforcement, cryptographic invite code generation. |
+| **Security & Auth** | `bcryptjs` | Salted SHA-512 derivation | Cryptographic password hashing (10 salt rounds), secure comparison, and mitigation of plaintext credential leaks. |
+| **Database** | MySQL 8.0 (Aiven Cloud) | `mysql2/promise` | Cloud-hosted relational persistence, ACID transactional safety, foreign key cascade constraints, `DECIMAL(12, 2)` monetary precision. |
+| **Notification** | Nodemailer | Asynchronous SMTP | Automated security alerts on user login, welcome emails with invite codes, contribution confirmations, and budget threshold alerts. |
+| **Payment Simulation**| Paystack Sandbox API | Node Fetch HTTP client | Mock checkout redirection, payment tokenization, transaction reference generation, and automated 5% emergency auto-save credit. |
+
+---
+
+### End-to-End Client-to-Database Request Lifecycle
+
+Every user operation in OnePot follows a deterministic four-phase pipeline:
+
+```
+[User Action in React UI]
+       │ (1) User submits form (e.g., Contribution / Allocation Request)
+       ▼
+[Local Database Service (`src/services/db.js`)]
+       │ (2) Performs client-side schema validation & optimistic cache update
+       ▼
+[HTTP Client (`fetch`)]
+       │ (3) Dispatches POST/GET request to `http://localhost:5000/api/...`
+       ▼
+[Express Server Middleware (`backend/server.js`)]
+       │ (4) CORS validation -> JSON body parser (`express.json()`) -> Modular Router dispatch
+       ▼
+[Domain Controller (`backend/controllers/*`)]
+       │ (5) RBAC authorization check (Parent vs. Child role)
+       │ (6) Parameter sanitation & business invariant verification
+       ▼
+[MySQL Connection Pool (`backend/models/db.js`)]
+       │ (7) Executes parameterized SQL query (`mysql2/promise`) against Aiven Cloud MySQL
+       ▼
+[Aiven Cloud MySQL Database (`defaultdb`)]
+       │ (8) Commits row transaction, updates pot balances, records audit log
+       ▼
+[Nodemailer Dispatcher (Non-Blocking Worker)]
+       │ (9) Fires async background SMTP alert (Parent alert / Login notice)
+       ▼
+[Express Response]
+       │ (10) Returns standardized JSON: `{ success: true, data: { ... } }`
+       ▼
+[React Hook State Update]
+       │ (11) `db.syncFromBackend(familyId)` updates state, triggering component re-render
+       ▼
+[Updated UI Displayed to User]
 ```
 
 ---
 
-## 2. 🎨 Design System, Typography & Color Tokens
+## 2. 🗄️ Complete Database Schema Breakdown
 
-The visual style uses a **Modern Glassmorphic Dark Theme** with Nigerian Emerald Green as the primary accent color.
+The OnePot relational schema conforms to Third Normal Form (3NF) across 9 primary entities, using the **InnoDB storage engine** for strict referential integrity and transaction rollbacks.
 
-### 🔤 Typography & Fonts
-Imported via Google Fonts in `src/index.css`:
-* **Heading & Display Font**: `'Outfit', sans-serif` (Weights: `500`, `600`, `700`, `800`)
-  * Used for main page headers, metric cards, stat numbers, brand titles, and modal headers.
-* **UI Body & Data Font**: `'Inter', system-ui, sans-serif` (Weights: `300`, `400`, `500`, `600`, `700`)
-  * Used for form labels, button text, table contents, and description text.
-
-### 🎨 Color Palette & CSS Variables (`src/index.css`)
-```css
-:root {
-  /* Background Surface Colors */
-  --bg-primary: #0f172a;        /* Slate 900 (Main Page Background) */
-  --bg-secondary: #1e293b;      /* Slate 800 (Header, Modals, Footers) */
-  --bg-card: rgba(30, 41, 59, 0.75); /* Glassmorphic Card Surface */
-  --border-color: rgba(255, 255, 255, 0.08); /* Glowing Card Borders */
-
-  /* Brand Accents */
-  --primary: #10b981;           /* Emerald Green (Primary Action & Positive Balance) */
-  --primary-hover: #059669;     /* Dark Emerald (Button Hover State) */
-  --accent-gold: #f59e0b;       /* Amber Gold (Shared Pooled Vault) */
-  --accent-blue: #3b82f6;       /* Royal Blue (Income Flows & Member Stats) */
-  --accent-purple: #8b5cf6;     /* Deep Purple (Savings & Investments) */
-  --accent-rose: #f43f5e;       /* Rose Red (Expenses, Withdrawals, Over-budget Alerts) */
-
-  /* Text Hierarchy */
-  --text-main: #f8fafc;         /* High-contrast Slate 50 */
-  --text-muted: #94a3b8;        /* Muted Slate 400 */
-  --text-subtle: #64748b;       /* Subtle Slate 500 */
-}
+```mermaid
+erDiagram
+    families ||--o{ users : "has members"
+    families ||--o{ family_members : "tracks membership"
+    families ||--o{ contributions : "accumulates pot"
+    families ||--o{ paystack_transactions : "logs payments"
+    families ||--o{ bowls : "defines budgets"
+    families ||--o{ expenses : "records outflows"
+    families ||--o{ goals : "defines targets"
+    families ||--o{ notifications : "receives alerts"
+    users ||--o{ family_members : "participates in"
+    users ||--o{ contributions : "deposits"
+    users ||--o{ expenses : "requests/spends"
+    users ||--o{ approvals : "authorizes"
+    expenses ||--o{ approvals : "reviewed by"
+    bowls ||--o{ expenses : "categorizes"
 ```
 
 ---
 
-## 3. 🗺️ File Directory Map (Where Each Code Is Located)
+### Detailed Table Specifications
+
+#### 1. `families`
+* **Purpose:** Represents the top-level shared vault account and household unit. Holds collective balances.
+* **Key Columns:**
+  * `id` (`INT(11) AUTO_INCREMENT PRIMARY KEY`): Unique household identifier.
+  * `family_name` (`VARCHAR(100) NOT NULL`): The surname or collective label (e.g., "The Adeleke Household").
+  * `invite_code` (`VARCHAR(12) NOT NULL UNIQUE`): Cryptographically unique invite token (`FAM-XXXXXX`).
+  * `created_by` (`INT(11) DEFAULT NULL`): Foreign key referencing the parent who registered the vault.
+  * `total_pot_balance` (`DECIMAL(12, 2) NOT NULL DEFAULT 0.00`): Live pooled cash available for disbursement.
+  * `emergency_fund_balance` (`DECIMAL(12, 2) NOT NULL DEFAULT 0.00`): Auto-saved emergency reserve.
+  * `auto_save_percentage` (`DECIMAL(5, 2) NOT NULL DEFAULT 5.00`): Percentage diverted from every deposit (default: 5%).
+  * `created_at` (`TIMESTAMP DEFAULT CURRENT_TIMESTAMP`): Record creation date.
+* **Foreign Keys & Constraints:**
+  * `FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL`
+* **Ecosystem Connection:** The root node of all family data. All transactions, bowls, and expenses map to `family_id`.
+
+---
+
+#### 2. `users`
+* **Purpose:** Stores individual human accounts adhering to the Spotify Family isolated-account model.
+* **Key Columns:**
+  * `id` (`INT(11) AUTO_INCREMENT PRIMARY KEY`): Unique user identifier.
+  * `family_id` (`INT(11) DEFAULT NULL`): Foreign key linking the user to their household.
+  * `first_name` (`VARCHAR(100) NOT NULL`), `last_name` (`VARCHAR(100) NOT NULL`): User legal name.
+  * `email` (`VARCHAR(255) NOT NULL UNIQUE`): Login email credential.
+  * `password_hash` (`VARCHAR(255) NOT NULL`): Salted bcrypt password hash.
+  * `role` (`ENUM('parent', 'member') NOT NULL DEFAULT 'member'`): RBAC permission tier.
+  * `avatar_url` (`VARCHAR(255) DEFAULT '👑'`): UI profile avatar emoji (`👑`, `🛡️`, `👤`).
+  * `created_at` (`TIMESTAMP DEFAULT CURRENT_TIMESTAMP`).
+* **Foreign Keys & Constraints:**
+  * `FOREIGN KEY (family_id) REFERENCES families(id) ON DELETE SET NULL`
+* **Ecosystem Connection:** Maps directly into `family_members`, authenticates logins, authors requests, and signs ledger approvals.
+
+---
+
+#### 3. `family_members`
+* **Purpose:** Association table mapping family hierarchy, household roles, and join dates.
+* **Key Columns:**
+  * `id` (`INT(11) AUTO_INCREMENT PRIMARY KEY`).
+  * `family_id` (`INT(11) NOT NULL`): Target household.
+  * `user_id` (`INT(11) NOT NULL`): User instance.
+  * `role_in_family` (`ENUM('head', 'spouse', 'child') NOT NULL DEFAULT 'child'`): Granular family role.
+  * `joined_at` (`TIMESTAMP DEFAULT CURRENT_TIMESTAMP`).
+* **Foreign Keys & Constraints:**
+  * `FOREIGN KEY (family_id) REFERENCES families(id) ON DELETE CASCADE`
+  * `FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE`
+  * `UNIQUE KEY uq_family_user (family_id, user_id)`: Prevents duplicate membership records.
+* **Ecosystem Connection:** Powers role-based permission checks in controllers.
+
+---
+
+#### 4. `contributions`
+* **Purpose:** Permanent ledger of incoming member pool deposits. Preserves personal salary privacy by tracking contributed amounts only.
+* **Key Columns:**
+  * `id` (`INT(11) AUTO_INCREMENT PRIMARY KEY`).
+  * `family_id` (`INT(11) NOT NULL`): Household receiving funds.
+  * `member_id` (`INT(11) NOT NULL`): User providing funds.
+  * `amount` (`DECIMAL(12, 2) NOT NULL`): Total amount contributed in Naira (₦).
+  * `source_note` (`VARCHAR(255) DEFAULT NULL`): Purpose or note (e.g., "Monthly Salary Share").
+  * `paystack_ref` (`VARCHAR(100) DEFAULT NULL`): Gateway reference linking to `paystack_transactions`.
+  * `created_at` (`TIMESTAMP DEFAULT CURRENT_TIMESTAMP`).
+* **Foreign Keys & Constraints:**
+  * `FOREIGN KEY (family_id) REFERENCES families(id) ON DELETE CASCADE`
+  * `FOREIGN KEY (member_id) REFERENCES users(id) ON DELETE CASCADE`
+* **Ecosystem Connection:** Incrementally increases `families.total_pot_balance` and `families.emergency_fund_balance`.
+
+---
+
+#### 5. `paystack_transactions`
+* **Purpose:** Payment gateway transaction log tracking online contributions through simulated or live Paystack checkout flows.
+* **Key Columns:**
+  * `id` (`INT(11) AUTO_INCREMENT PRIMARY KEY`).
+  * `family_id` (`INT(11) NOT NULL`), `member_id` (`INT(11) NOT NULL`).
+  * `reference` (`VARCHAR(100) NOT NULL UNIQUE`): Unique Paystack reference (`onepot_pay_...`).
+  * `amount` (`DECIMAL(12, 2) NOT NULL`): Amount in Naira.
+  * `status` (`ENUM('pending', 'success', 'failed') NOT NULL DEFAULT 'pending'`).
+  * `access_code` (`VARCHAR(100) DEFAULT NULL`), `authorization_url` (`TEXT DEFAULT NULL`).
+  * `created_at` (`TIMESTAMP DEFAULT CURRENT_TIMESTAMP`), `verified_at` (`TIMESTAMP NULL DEFAULT NULL`).
+* **Foreign Keys & Constraints:**
+  * `FOREIGN KEY (family_id) REFERENCES families(id) ON DELETE CASCADE`
+  * `FOREIGN KEY (member_id) REFERENCES users(id) ON DELETE CASCADE`
+* **Ecosystem Connection:** Precedes entry into `contributions`. Once verified, converts pending money into active pool cash.
+
+---
+
+#### 6. `bowls`
+* **Purpose:** "Smart Bowls" represent dynamic category envelopes and budget caps (e.g., Food & Groceries, School Fees, House Rent, PHCN Power).
+* **Key Columns:**
+  * `id` (`INT(11) AUTO_INCREMENT PRIMARY KEY`).
+  * `family_id` (`INT(11) NOT NULL`).
+  * `category_name` (`VARCHAR(100) NOT NULL`).
+  * `allocated_amount` (`DECIMAL(12, 2) NOT NULL DEFAULT 0.00`): Monthly budget cap.
+  * `spent_amount` (`DECIMAL(12, 2) NOT NULL DEFAULT 0.00`): Cumulative month-to-date outflows.
+  * `priority_level` (`ENUM('High', 'Medium', 'Low') NOT NULL DEFAULT 'Medium'`).
+  * `created_at` (`TIMESTAMP DEFAULT CURRENT_TIMESTAMP`).
+* **Foreign Keys & Constraints:**
+  * `FOREIGN KEY (family_id) REFERENCES families(id) ON DELETE CASCADE`
+* **Ecosystem Connection:** Destination for fund allocations; destination bowl for child allocation requests; triggers 80% and 100% budget alerts.
+
+---
+
+#### 7. `expenses`
+* **Purpose:** Outflow ledger of all household expenses and child allocation requests.
+* **Key Columns:**
+  * `id` (`INT(11) AUTO_INCREMENT PRIMARY KEY`).
+  * `family_id` (`INT(11) NOT NULL`), `bowl_id` (`INT(11) NOT NULL`).
+  * `requested_by_user_id` (`INT(11) NOT NULL`): Initiator (Child or Parent).
+  * `amount` (`DECIMAL(12, 2) NOT NULL`): Outflow amount in Naira.
+  * `description` (`TEXT NOT NULL`): Explanation or receipt breakdown.
+  * `status` (`ENUM('pending', 'approved', 'rejected') NOT NULL DEFAULT 'pending'`).
+  * `is_emergency` (`BOOLEAN NOT NULL DEFAULT FALSE`): Flag for emergency borrowing.
+  * `created_at` (`TIMESTAMP DEFAULT CURRENT_TIMESTAMP`).
+* **Foreign Keys & Constraints:**
+  * `FOREIGN KEY (family_id) REFERENCES families(id) ON DELETE CASCADE`
+  * `FOREIGN KEY (bowl_id) REFERENCES bowls(id) ON DELETE CASCADE`
+  * `FOREIGN KEY (requested_by_user_id) REFERENCES users(id) ON DELETE CASCADE`
+* **Ecosystem Connection:** Child requests enter as `status = 'pending'`. Upon parent approval, state becomes `'approved'`, triggering pot deductions.
+
+---
+
+#### 8. `approvals`
+* **Purpose:** Immutable audit trail documenting parent administrative governance over expenses and emergency requests.
+* **Key Columns:**
+  * `id` (`INT(11) AUTO_INCREMENT PRIMARY KEY`).
+  * `expense_id` (`INT(11) NOT NULL`): Foreign key to the reviewed expense.
+  * `approved_by_user_id` (`INT(11) NOT NULL`): Foreign key to the parent approver.
+  * `status` (`ENUM('approved', 'rejected') NOT NULL`): Administrative decision.
+  * `decision_note` (`TEXT DEFAULT NULL`): Written reason or notes from parent.
+  * `decided_at` (`TIMESTAMP DEFAULT CURRENT_TIMESTAMP`).
+* **Foreign Keys & Constraints:**
+  * `FOREIGN KEY (expense_id) REFERENCES expenses(id) ON DELETE CASCADE`
+  * `FOREIGN KEY (approved_by_user_id) REFERENCES users(id) ON DELETE CASCADE`
+* **Ecosystem Connection:** Establishes accountability for every Naira disbursed from the collective vault.
+
+---
+
+#### 9. `goals`
+* **Purpose:** Shared family target vaults for milestone projects (e.g., "Solar Inverter System", "December Village Trip", "Land Acquisition").
+* **Key Columns:**
+  * `id` (`INT(11) AUTO_INCREMENT PRIMARY KEY`).
+  * `family_id` (`INT(11) NOT NULL`), `created_by_user_id` (`INT(11) NOT NULL`).
+  * `title` (`VARCHAR(150) NOT NULL`), `target_amount` (`DECIMAL(12, 2) NOT NULL`).
+  * `current_amount` (`DECIMAL(12, 2) NOT NULL DEFAULT 0.00`).
+  * `image_url` (`VARCHAR(255) DEFAULT NULL`), `status` (`ENUM('active', 'completed', 'cancelled') NOT NULL DEFAULT 'active'`).
+  * `created_at` (`TIMESTAMP DEFAULT CURRENT_TIMESTAMP`).
+* **Foreign Keys & Constraints:**
+  * `FOREIGN KEY (family_id) REFERENCES families(id) ON DELETE CASCADE`
+  * `FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE CASCADE`
+* **Ecosystem Connection:** Isolates long-term family savings goals from recurring monthly operational bowls.
+
+---
+
+#### 10. `notifications`
+* **Purpose:** Dual-channel notification log (in-app alerts and Nodemailer SMTP audit events).
+* **Key Columns:**
+  * `id` (`INT(11) AUTO_INCREMENT PRIMARY KEY`), `family_id` (`INT(11) NOT NULL`).
+  * `user_id` (`INT(11) DEFAULT NULL`): Target user (`NULL` indicates household-wide broadcast).
+  * `message` (`TEXT NOT NULL`), `type` (`VARCHAR(50) NOT NULL`): Event type (`allocation_request`, `contribution`, `budget_alert`, etc.).
+  * `is_read` (`BOOLEAN NOT NULL DEFAULT FALSE`), `sent_at` (`TIMESTAMP DEFAULT CURRENT_TIMESTAMP`).
+* **Foreign Keys & Constraints:**
+  * `FOREIGN KEY (family_id) REFERENCES families(id) ON DELETE CASCADE`
+  * `FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE`
+
+---
+
+## 3. 🔄 Core Business Workflows & Data Flows
+
+### Workflow 1: Private Family Invite & Membership Registration
+OnePot operates a **Zero-Unauthenticated Registration Model** where public sign-ups are prohibited.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Parent as Parent Admin
+    actor Member as Child / Member
+    participant Client as React Client
+    participant API as Express REST API
+    participant DB as Aiven MySQL
+
+    Parent->>Client: Enters Family Name, Email, Password
+    Client->>API: POST /api/auth/register-parent
+    API->>API: bcrypt.hash(password, 10)
+    API->>API: Generate crypto invite code (FAM-XXXXXX)
+    API->>DB: INSERT INTO users (role='parent')
+    API->>DB: INSERT INTO families (invite_code, created_by)
+    API->>DB: INSERT INTO family_members (role_in_family='head')
+    API-->>Parent: Returns user profile, family object, & Invite Code
+    Parent->>Member: Shares private invite link (/register?invite=FAM-XXXXXX)
+    Member->>Client: Opens registration link
+    Client->>API: GET /api/family/verify-invite/FAM-XXXXXX
+    API->>DB: SELECT id, family_name FROM families WHERE invite_code=?
+    DB-->>API: Returns family details
+    API-->>Client: Returns { valid: true, family_name, family_id }
+    Member->>Client: Fills in Name, Email, Password, Role (child/spouse)
+    Client->>API: POST /api/auth/register-member
+    API->>API: Verify invite_code uniqueness & hash password
+    API->>DB: INSERT INTO users (role='member')
+    API->>DB: INSERT INTO family_members (role_in_family='child')
+    API-->>Client: Returns member session & joins household vault
+```
+
+---
+
+### Workflow 2: Contribution & 5% Auto-Save Diversion
+When a member contributes funds, the platform automatically splits and credits the deposit.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as Family Contributor
+    participant Client as React UI
+    participant API as Express API
+    participant Paystack as Paystack Sandbox
+    participant DB as Aiven MySQL
+    participant SMTP as Nodemailer SMTP
+
+    User->>Client: Submits contribution amount (e.g., ₦100,000)
+    Client->>API: POST /api/payments/initialize-contribution
+    API->>Paystack: POST /transaction/initialize (amount in kobo, reference)
+    Paystack-->>API: Returns { authorization_url, access_code, reference }
+    API->>DB: INSERT INTO paystack_transactions (status='pending')
+    API-->>Client: Returns payment credentials
+    User->>Client: Completes simulated sandbox payment flow
+    Client->>API: POST /api/payments/verify-contribution (reference)
+    API->>Paystack: GET /transaction/verify/:reference
+    Paystack-->>API: Returns status: 'success'
+    API->>DB: UPDATE paystack_transactions SET status='success'
+    API->>DB: INSERT INTO contributions (amount=100000, member_id, paystack_ref)
+    Note over API,DB: Calculates 5% Auto-Save: ₦5,000 to Emergency Fund
+    API->>DB: UPDATE families SET total_pot_balance = total_pot_balance + 100000, emergency_fund_balance = emergency_fund_balance + 5000
+    API->>DB: INSERT INTO notifications (type='contribution')
+    API-)SMTP: Non-blocking dispatch of confirmation email to Parents
+    API-->>Client: Returns updated total_pot_balance & emergency_fund_balance
+    Client->>Client: Re-renders PooledFundCard with dynamic live balance
+```
+
+---
+
+### Workflow 3: Child Allocation Request & Parent Approval Pipeline
+Enforces strict Role-Based Access Control (RBAC) preventing unauthorized fund dissipation.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Child as Child Member
+    actor Parent as Parent Admin
+    participant Client as React UI
+    participant API as Express API
+    participant DB as Aiven MySQL
+    participant SMTP as Nodemailer SMTP
+
+    Child->>Client: Submits Request (₦15,000 for "School Books")
+    Client->>API: POST /api/allocations/request
+    API->>DB: INSERT INTO expenses (status='pending', requested_by_user_id)
+    API->>DB: INSERT INTO notifications (for each Parent in family)
+    API-)SMTP: Dispatches email alert to Parents
+    API-->>Client: Returns staged request record
+    Parent->>Client: Logs in and opens Approval Drawer in Header
+    Client->>API: GET /api/allocations/requests?family_id=1
+    API->>DB: SELECT * FROM expenses WHERE status='pending'
+    DB-->>API: Returns pending requests
+    API-->>Client: Displays inline Accept / Reject buttons
+    Parent->>Client: Clicks "Accept" (Approve)
+    Client->>API: POST /api/allocations/:id/approve
+    API->>DB: Verify Parent Role in `users`
+    API->>DB: Verify `families.total_pot_balance` >= ₦15,000
+    API->>DB: UPDATE expenses SET status='approved' WHERE id=:id
+    API->>DB: UPDATE families SET total_pot_balance = total_pot_balance - 15000
+    API->>DB: UPDATE bowls SET spent_amount = spent_amount + 15000 WHERE id=:bowl_id
+    API->>DB: INSERT INTO approvals (expense_id, approved_by_user_id, status='approved')
+    API->>DB: INSERT INTO notifications (notifying Child of approval)
+    API-)SMTP: Dispatches approval email to Child
+    API-->>Client: Returns { success: true, total_pot_balance, bowl }
+    Client->>Client: Re-renders Dashboard ledger & Smart Bowl meters
+```
+
+---
+
+## 4. 📡 API Endpoint Reference
+
+| Method | Endpoint Path | Headers & Payload | Expected Response (JSON) | RBAC Scope |
+| :--- | :--- | :--- | :--- | :--- |
+| `POST` | `/api/auth/register-parent` | `{ family_name, first_name, last_name, email, password, avatar }` | `201 Created`: `{ success, user, family, invite_code }` | Public (Unauthenticated) |
+| `POST` | `/api/auth/register-member` | `{ invite_code, first_name, last_name, email, password, role_in_family }`| `201 Created`: `{ success, user, family }` | Invite Required |
+| `POST` | `/api/auth/login` | `{ email, password }` | `200 OK`: `{ success, message, user, family }` | Public |
+| `GET` | `/api/auth/me` | `?user_id=1` or `x-user-id: 1` | `200 OK`: `{ success, user, family }` | Authenticated Session |
+| `POST` | `/api/auth/forgot-password` | `{ email }` | `200 OK`: `{ success, message }` (Silent non-enumeration) | Public |
+| `GET` | `/api/family/verify-invite/:code` | Path parameter: `:code` | `200 OK`: `{ valid: true, family_name, family_id, invite_code }` | Public |
+| `GET` | `/api/family/:id` | Path parameter: `:id` | `200 OK`: `{ success, data: familyObject }` | Family Members |
+| `GET` | `/api/users` | Query: `?family_id=1` | `200 OK`: `{ success, data: [ users ] }` | Family Members |
+| `GET` | `/api/bowls` | Query: `?family_id=1` | `200 OK`: `{ success, data: [ bowls ] }` (Auto-seeds if empty) | Family Members |
+| `GET` | `/api/pooled-fund` | Query: `?family_id=1` | `200 OK`: `{ success, data: { pool_id, balance, emergency_fund_balance } }`| Family Members |
+| `GET` | `/api/pool-transactions` | Query: `?family_id=1` | `200 OK`: `{ success, data: [ contributions + allocations ] }` | Family Members |
+| `POST` | `/api/pool-transactions/contribute`| `{ user_id, amount, purpose, source_note, family_id }` | `200 OK`: `{ success, message, data: { total_pot_balance } }` | Family Members |
+| `POST` | `/api/payments/initialize-contribution`| `{ family_id, member_id, amount, source_note }` | `200 OK`: `{ success, data: { reference, authorization_url } }` | Family Members |
+| `POST` | `/api/payments/verify-contribution`| `{ reference, family_id, member_id, amount }` | `200 OK`: `{ success, data: { total_pot_balance, emergency_fund_balance } }`| Family Members |
+| `GET` | `/api/expenses` | Query: `?family_id=1` | `200 OK`: `{ success, count, data: [ expenses ] }` | Family Members |
+| `POST` | `/api/expenses` | `{ user_id, family_id, bowl_id, amount, description }` | `201 Created`: `{ success, data: newExpense }` | Family Members |
+| `POST` | `/api/budget-limits` | `{ bowl_id, amount, family_id }` | `200 OK`: `{ success, message, data: { allocated_amount } }` | Parents Only |
+| `POST` | `/api/allocations/request` | `{ family_id, child_id, bowl_id, amount, description }` | `201 Created`: `{ success, message, data: requestRecord }` | Child Members |
+| `POST` | `/api/allocations/:id/approve` | `{ user_id, approved_by_user_id }` | `200 OK`: `{ success, data: { total_pot_balance, status } }` | Parents Only |
+| `POST` | `/api/allocations/:id/reject` | `{ user_id, rejected_by_user_id, reason }` | `200 OK`: `{ success, data: { status: 'rejected' } }` | Parents Only |
+| `POST` | `/api/allocations/direct` | `{ user_id, bowl_id, amount, purpose, family_id }` | `200 OK`: `{ success, data: { total_pot_balance } }` | Parents Only |
+| `GET` | `/api/allocations/requests`| Query: `?family_id=1` | `200 OK`: `{ success, data: [ pendingRequests ] }` | Family Members |
+| `GET` | `/api/notifications` | Query: `?family_id=1` | `200 OK`: `{ success, data: [ notifications ] }` | Family Members |
+| `PUT` | `/api/notifications/read-all` | Body: `{ family_id }` | `200 OK`: `{ success, message: "All notifications marked as read" }` | Family Members |
+
+---
+
+## 5. 💻 Frontend Architecture & State Flow
+
+The React frontend utilizes a single-page reactive architecture organized into focused functional views and modal components.
 
 ```
-family-pooled-bank/
-├── backend/
-│   ├── package.json         --> CommonJS module config & backend dependencies
-│   ├── schema.sql           --> MySQL Database creation script (Tables 3.1 - 3.9)
-│   └── server.js            --> Node.js/Express REST API server & Nodemailer SMTP service
+src/
+├── main.jsx                     --> Application root bootstrap with strict error boundary
+├── App.jsx                      --> Master state coordinator, view switch router, theme manager
+├── index.css                    --> Global Design System, CSS variables, & responsive utilities
 │
-├── src/
-│   ├── assets/              --> Static assets & icon graphics
-│   ├── components/
-│   │   ├── AuthModal.jsx            --> Login, New Family Registration, & Join Family UI
-│   │   ├── BudgetManager.jsx        --> Category spending cap configuration & progress meters
-│   │   ├── Dashboard.jsx            --> Executive overview, stat cards, & Chart.js graphs
-│   │   ├── ExpenseFormModal.jsx     --> Modal form for logging household expenses
-│   │   ├── Header.jsx               --> Top navigation bar, family badge, & Sign Out menu
-│   │   ├── IncomeFormModal.jsx      --> Modal form for logging member income
-│   │   ├── NotificationDrawer.jsx   --> SMTP email alert drawer & notification status
-│   │   ├── PeriodicReport.jsx       --> Weekly/Monthly reporting & print/export engine
-│   │   ├── PoolTransactionsLog.jsx  --> Audit trail of pooled fund deposits & allocations
-│   │   └── PooledFundCard.jsx       --> Central Shared Vault card (Deposit & Withdraw controls)
-│   │
-│   ├── services/
-│   │   ├── db.js            --> Client-side Reactive LocalDatabase & REST API syncer
-│   │   └── smtpService.js   --> Automated budget evaluation & email payload generator
-│   │
-│   ├── App.css              --> Layout container & responsive styling overrides
-│   ├── App.jsx              --> Root application coordinator & Auth Guard
-│   ├── index.css            --> Global Design System, CSS tokens, buttons, & glassmorphism
-│   └── main.jsx             --> React 19 application mount entry point
+├── components/
+│   ├── LandingPage.jsx          --> Public hero, feature breakdown, academic disclaimer, footer
+│   ├── RegisterPage.jsx         --> Private invite verification route (/register?invite=CODE)
+│   ├── AuthModal.jsx            --> Minimalist Login & Parent Family Registration modal card
+│   ├── Header.jsx               --> Brand header, RBAC badge, Notification/Approval drawer, theme toggle
+│   ├── Dashboard.jsx            --> Executive metric tiles, Unified Household History table, quick actions
+│   ├── PooledFundCard.jsx       --> Central Pot Balance display card, Contribute & Allocate actions
+│   ├── BudgetManager.jsx        --> Smart Bowls monthly cap configuration, progress meters, & edit modal
+│   ├── PoolTransactionsLog.jsx  --> Permanent transparency audit ledger of pool inflows & outflows
+│   ├── PeriodicReport.jsx       --> Comprehensive statement of cash flows, category variance, print view
+│   ├── FamilyInviteCard.jsx     --> Private invite code badge with one-click URL copy
+│   ├── ExpenseFormModal.jsx     --> Modal form for logging household expenses with category picker
+│   ├── AllocationRequestModal.jsx-> Child modal form for submitting fund allocation requests
+│   └── DepositAccountModal.jsx  --> Modal for linking external settlement bank accounts
 │
-├── index.html               --> Main HTML template with Google Fonts links
-├── package.json             --> Frontend dependencies (React 19, Chart.js, Lucide Icons, Vite)
-└── vite.config.js           --> Vite bundler configuration
+└── services/
+    ├── db.js                    --> LocalDatabase reactive client service & backend REST syncer
+    └── smtpService.js           --> Client-side automated budget threshold email payload builder
 ```
 
----
+### State Flow & Synchronization
 
-## 4. 🔑 Authentication & Multi-Family Workflow (`AuthModal.jsx`)
+1. **Authentication State:**
+   * Handled in `App.jsx` via `useState(initialSession?.user || null)`.
+   * Sessions persist across browser reloads via `localStorage.getItem('family_bank_auth_session')`.
+   * On successful authentication (`handleLoginSuccess`), user and family records are saved to storage, initializing the active view.
 
-The authentication layer handles multi-family household management:
+2. **Reactive Local Database (`src/services/db.js`):**
+   * Acts as a client-side Data Access Object (DAO) pattern.
+   * `syncFromBackend(familyId)` issues parallel asynchronous requests (`Promise.all`) fetching pooled funds, transactions, smart bowls, expenses, and notifications from the Express API.
+   * Eliminates prop drilling by allowing child components to read synchronously (`db.getPooledFund(fid)`) while mutations asynchronously persist to Aiven MySQL.
 
-1. **Authentication Guard (`App.jsx`)**:
-   - On application launch, `db.getCurrentSession()` checks `localStorage` for `family_bank_auth_session`.
-   - If no valid user session is present, the app renders `AuthModal.jsx`.
-
-2. **Login Options (`AuthModal.jsx`)**:
-   - **Email & Password Login**: Validates input against `dbState.users`.
-   - **One-Click Quick Demo Login**: Fast-track login buttons for testing pre-configured accounts:
-     - 👨‍💼 **Emeka Okafor** (Father / Head of Household Admin)
-     - 👩‍💼 **Nneka Okafor** (Mother / Co-Manager Admin)
-     - 🧑‍🎓 **Chidi Okafor** (Child / Student Contributor)
-
-3. **Register New Family**:
-   - Creates a new entry in `dbState.family` and generates an isolated family workspace with a custom family name (e.g., *"The Adeleke Household"*).
-
-4. **Join Existing Family**:
-   - Allows new family members to join existing family accounts via Family ID selection.
+3. **Theme Management Engine:**
+   * Evaluates `localStorage.getItem('onepot_theme')` and falls back to `window.matchMedia('(prefers-color-scheme: dark)')`.
+   * Automatically synchronizes the `data-theme="light"` or `data-theme="dark"` attribute on the `document.documentElement` DOM node.
 
 ---
 
-## 5. ⚙️ Core Application Modules & Functional Logic
+## 6. 🎓 Technical Defense & Exam Study Guide (Q&A)
 
-### A. Pooled Family Vault (Shared Vault) ([PooledFundCard.jsx](file:///c:/Users/MAGE/Documents/family-pooled-bank/src/components/PooledFundCard.jsx))
-* **Function**: Manages shared household reserves in Nigerian Naira (₦).
-* **Contributions**: Any family member can deposit funds into the pool (`db.contributeToPool`).
-* **Allocations**: Parents can approve and allocate funds for house expenses (`db.allocateFromPool`). If pool balance is insufficient, the system prevents overdrafts and throws an alert.
+Here are the most critical technical questions an engineering evaluator, professor, or technical reviewer will ask regarding this architecture, accompanied by authoritative answers:
 
-### B. Executive Dashboard & Visual Analytics ([Dashboard.jsx](file:///c:/Users/MAGE/Documents/family-pooled-bank/src/components/Dashboard.jsx))
-* **Stat Cards**: Displays Total Family Income, Total Family Expenses, Net Household Surplus, and Shared Pool Balance.
-* **Chart.js Doughnut Chart**: Interactive breakdown of expenditures across categories (*Food & Provisions*, *School Fees*, *Generator Fuel & PHCN*, etc.).
-* **Chart.js Bar Chart**: Comparative cashflow analysis across family members.
-
-### C. Budget Cap Engine ([BudgetManager.jsx](file:///c:/Users/MAGE/Documents/family-pooled-bank/src/components/BudgetManager.jsx))
-* **Function**: Sets monthly maximum limits per expense category.
-* **Visual Status Meters**:
-  * 🟢 **Green (< 80%)**: Normal spending.
-  * 🟡 **Yellow (80% - 99%)**: Threshold Warning state.
-  * 🔴 **Red (>= 100%)**: Budget Exceeded critical alert state.
-
-### D. Automated SMTP Email Alert Dispatcher ([smtpService.js](file:///c:/Users/MAGE/Documents/family-pooled-bank/src/services/smtpService.js) & [server.js](file:///c:/Users/MAGE/Documents/family-pooled-bank/backend/server.js))
-* Whenever an expense is logged, `SMTPNotificationService.evaluateBudgetAlerts()` evaluates category limits.
-* If a budget threshold is reached or exceeded, it automatically generates a formatted HTML/text email payload and posts to the Node.js backend endpoint `/api/notifications/send-email` using Nodemailer.
+### Q1: How does OnePot prevent race conditions and balance discrepancies when two family members contribute or allocate funds simultaneously?
+> **Answer:**
+> Concurrency is maintained through **atomic database operations** in MySQL rather than calculating balances in Node.js application memory. 
+> When approving an allocation or confirming a contribution, the controller executes atomic arithmetic expressions:
+> ```sql
+> UPDATE families 
+> SET total_pot_balance = total_pot_balance + ?, emergency_fund_balance = emergency_fund_balance + ? 
+> WHERE id = ?;
+> ```
+> MySQL's InnoDB engine places an **exclusive row-level lock (`X-lock`)** on the target `families` row for the duration of the update transaction. If two transactions arrive at the same millisecond, InnoDB serializes them sequentially, ensuring balance mutations never overwrite each other.
 
 ---
 
-## 6. 🗄️ Database Schemas (Chapter 3 Tables 3.1 - 3.9)
-
-Defined in [backend/schema.sql](file:///c:/Users/MAGE/Documents/family-pooled-bank/backend/schema.sql):
-
-| Table Name | Description | Key Fields |
-| :--- | :--- | :--- |
-| `family_table` | Household Accounts | `family_id`, `family_name`, `created_at` |
-| `user_table` | Family Members & Roles | `user_id`, `family_id`, `first_name`, `last_name`, `email`, `role` |
-| `category_table` | Expenditure Categories | `category_id`, `family_id`, `category_name` |
-| `budgetlimit_table` | Category Spending Caps | `limit_id`, `family_id`, `category_id`, `amount`, `period` |
-| `pooledfund_table` | Central Vault Balance | `pool_id`, `family_id`, `balance`, `last_updated` |
-| `pooltransactions_table` | Deposit & Allocation Log | `transaction_id`, `family_id`, `user_id`, `type`, `amount`, `purpose` |
-| `income_table` | Member Income Entries | `income_id`, `user_id`, `family_id`, `source`, `amount`, `date_received` |
-| `expense_table` | Member Expense Entries | `expense_id`, `user_id`, `family_id`, `category_id`, `amount`, `date_spent` |
-| `notification_table` | System Alerts & SMTP Logs | `notification_id`, `family_id`, `user_id`, `type`, `message`, `sent_at` |
+### Q2: Why did you implement a "Zero-Unauthenticated Registration Model" with private family invite codes instead of an open public sign-up?
+> **Answer:**
+> Traditional banking apps allow open public sign-ups because accounts are isolated individuals. However, OnePot is engineered around a **shared household collective (the Family Pot)**.
+> Allowing unauthenticated open registration creates orphan users who do not belong to any household vault. By implementing cryptographic `FAM-XXXXXX` invite tokens generated exclusively by verified Parent Admins:
+> 1. We guarantee every member record in `family_members` enforces a valid foreign key relation to an existing `family_id`.
+> 2. We prevent malicious third parties from discovering or joining a private family ledger without explicit parental authorization.
+> 3. Direct registration without a validated invite parameter is blocked at both client and controller validation tiers.
 
 ---
 
-## 7. 🚀 Terminal Commands & Administration Guide
+### Q3: How does the system address personal income privacy versus household financial transparency?
+> **Answer:**
+> In Nigerian and broader African cultural contexts, members often hesitate to disclose their full personal income due to extended family financial pressure ("Black Tax").
+> OnePot solves this via the **Chapter 3 Spotify Family Model**:
+> * Individual salaries are strictly private. The database does not require members to log their external employer paychecks.
+> * Transparency is enforced strictly at the **Contribution Boundary**: once a member chooses to transfer funds from their private wallet into the shared pot, that specific transaction is logged permanently in `contributions` and displayed on the audit ledger. Members retain income privacy while the household achieves 100% accountability on shared expenditures.
 
-### Running the Application Locally
-1. **Frontend Dev Server (Vite)**:
-   ```powershell
-   npm run dev
-   ```
-   *Runs on `http://localhost:5173`*
+---
 
-2. **Backend REST API & Nodemailer Server (Express)**:
-   ```powershell
-   node backend/server.js
-   ```
-   *Runs on `http://localhost:5000`*
+### Q4: How is Role-Based Access Control (RBAC) enforced between Parents and Children, and why isn't client-side UI hiding sufficient?
+> **Answer:**
+> While the React frontend conditionally renders "Allocate Pooled Funds" for Parents and "Request Fund Allocation" for Children, client-side hiding is only for UX and does not provide security.
+> True RBAC is enforced strictly at the **Express Controller and Database Layer**:
+> In `backend/controllers/allocationController.js`:
+> 1. The controller extracts the user ID from the request.
+> 2. It queries MySQL: `SELECT role FROM users WHERE id = ?`.
+> 3. If `user.role !== 'parent'`, the server halts execution immediately and returns an `HTTP 403 Forbidden` response:
+>    ```json
+>    { "success": false, "error": "Access Denied: Only Parent Managers are authorized to allocate pooled funds." }
+>    ```
+> Even if a malicious actor crafts a manual `curl` or Postman request to `/api/allocations/:id/approve`, the server rejects the request.
 
-188: 3. **Linting & Code Verification**:
-189:    ```powershell
-190:    npm run lint
-191:    ```
-192: 
-193: ---
-194: 
-195: ## 📎 Appendix A (Source Codes)
-196: 
-197: ### 1. Backend Entry Point (`backend/server.js`)
-198: 
-199: ```javascript
-200: /**
-201:  * Node.js & Express.js Backend REST API
-202:  * Section 3.4 Application Tier Implementation
-203:  * Supports MySQL/In-Memory DB connection & Nodemailer SMTP Automated Email Dispatch
-204:  */
-205: 
-206: const express = require('express');
-207: const cors = require('cors');
-208: const nodemailer = require('nodemailer');
-209: 
-210: const app = express();
-211: const PORT = process.env.PORT || 5000;
-212: 
-213: app.use(cors());
-214: app.use(express.json());
-215: 
-216: // Blank Slate In-Memory Database (0 hardcoded dummy profiles)
-217: const dbState = {
-218:   family: [],
-219:   users: [],
-220:   categories: [
-221:     { category_id: 1, family_id: 1, category_name: 'Food & Provisions', icon: '🛒' },
-222:     { category_id: 2, family_id: 1, category_name: 'School Fees & Books', icon: '🎓' },
-223:     { category_id: 3, family_id: 1, category_name: 'House Rent & Maintenance', icon: '🏠' },
-224:     { category_id: 4, family_id: 1, category_name: 'Generator Fuel & PHCN', icon: '⚡' },
-225:     { category_id: 5, family_id: 1, category_name: 'Healthcare & Emergency', icon: '🏥' },
-226:     { category_id: 6, family_id: 1, category_name: 'Transport & Car Fuel', icon: '🚗' },
-227:     { category_id: 7, family_id: 1, category_name: 'Extended Family ("Black Tax")', icon: '🤝' },
-228:     { category_id: 8, family_id: 1, category_name: 'Savings & Investments', icon: '💰' }
-229:   ],
-230:   budgetLimits: [],
-231:   pooledFund: {
-232:     pool_id: 1,
-233:     family_id: 1,
-234:     balance: 0.00,
-235:     last_updated: new Date().toISOString()
-236:   },
-237:   poolTransactions: [],
-238:   incomes: [],
-239:   expenses: [],
-240:   notifications: [],
-241:   depositAccounts: []
-242: };
-243: 
-244: // Nodemailer SMTP Transporter configuration
-245: const transporter = nodemailer.createTransport({
-246:   host: process.env.SMTP_HOST || 'smtp.gmail.com',
-247:   port: process.env.SMTP_PORT || 587,
-248:   secure: false, // TLS
-249:   auth: {
-250:     user: process.env.SMTP_USER || 'naijafamilybank@gmail.com',
-251:     pass: process.env.SMTP_PASS || 'demo_app_password'
-252:   }
-253: });
-254: 
-255: // --- REST API ENDPOINTS ---
-256: 
-257: // 0. Root Welcome & Server Status Route
-258: app.get('/', (req, res) => {
-259:   res.send(`
-260:     <! climate-html>
-261:     <html>
-262:       <head>
-263:         <title>NaijaFamily Pooled Bank REST API</title>
-264:         <style>
-265:           body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f172a; color: #f8fafc; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-266:           .card { background: #1e293b; padding: 2.5rem; border-radius: 16px; border: 1px solid #334155; max-width: 520px; text-align: center; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5); }
-267:           h1 { color: #10b981; font-size: 1.6rem; margin-bottom: 0.5rem; }
-268:           p { color: #94a3b8; font-size: 0.95rem; line-height: 1.5; }
-269:           .badge { display: inline-block; background: rgba(16, 185, 129, 0.15); color: #34d399; font-weight: 600; padding: 0.35rem 0.85rem; border-radius: 9999px; margin-top: 1rem; font-size: 0.85rem; }
-270:           .btn { display: inline-block; margin-top: 1.5rem; background: #3b82f6; color: white; text-decoration: none; padding: 0.75rem 1.5rem; border-radius: 8px; font-weight: 600; }
-271:           .btn:hover { background: #2563eb; }
-272:         </style>
-273:       </head>
-274:       <body>
-275:         <div class="card">
-276:           <h1>🚀 NaijaFamily Pooled Bank REST API</h1>
-277:           <p>This is the <strong>Backend Application Server</strong> running Node.js & Express. It handles data sync, REST endpoints, and Nodemailer SMTP email dispatch.</p>
-278:           <div class="badge">● Server Status: ONLINE (Port 5000)</div>
-279:           <br/>
-280:           <a class="btn" href="http://localhost:5173" target="_self">Open Frontend Web Application (Port 5173) &rarr;</a>
-281:         </div>
-282:       </body>
-283:     </html>
-284:   `);
-285: });
-286: 
-287: // 1. Health check endpoint
-288: app.get('/api/health', (req, res) => {
-289:   res.json({
-290:     status: 'OK',
-291:     app: 'NaijaFamily Pooled Bank REST API',
-292:     tier: 'Application Tier (Node.js/Express)',
-293:     timestamp: new Date().toISOString(),
-294:     stats: {
-295:       families: dbState.family.length,
-296:       users: dbState.users.length,
-297:       expensesCount: dbState.expenses.length
-298:     }
-299:   });
-300: });
-301: 
-302: // --- AUTHENTICATION & FAMILY ENDPOINTS ---
-303: 
-304: // Get all families
-305: app.get('/api/families', (req, res) => {
-306:   res.json({ success: true, data: dbState.family });
-307: });
-308: 
-309: // Login endpoint
-310: app.post('/api/auth/login', (req, res) => {
-311:   const { email, password, user_id } = req.body;
-312: 
-313:   let user = null;
-314:   if (user_id) {
-315:     user = dbState.users.find(u => u.user_id === Number(user_id));
-316:   } else if (email) {
-317:     user = dbState.users.find(u => u.email.toLowerCase() === email.toLowerCase());
-318:   }
-319: 
-320:   if (!user) {
-321:     return res.status(401).json({ success: false, error: 'User account not found. Please check your credentials or sign up.' });
-322:   }
-323: 
-324:   if (user.password && password !== user.password) {
-325:     return res.status(401).json({ success: false, error: 'Incorrect password. Please verify your password and try again.' });
-326:   }
-327: 
-328:   const family = dbState.family.find(f => f.family_id === user.family_id) || { family_id: user.family_id, family_name: 'Household' };
-329: 
-330:   res.json({
-331:     success: true,
-332:     message: `Welcome back, ${user.first_name}!`,
-333:     user,
-334:     family
-335:   });
-336: });
-337: 
-338: // Register New Family Account endpoint
-339: app.post('/api/auth/register-family', (req, res) => {
-340:   const { family_name, first_name, last_name, email, password, role, avatar } = req.body;
-341: 
-342:   if (!family_name || !first_name || !email || !password) {
-343:     return res.status(400).json({ success: false, error: 'Family name, First name, Email, and Password are required.' });
-344:   }
-345: 
-346:   if (password.length < 6) {
-347:     return res.status(400).json({ success: false, error: 'Password must be at least 6 characters long.' });
-348:   }
-349: 
-350:   const existingUser = dbState.users.find(u => u.email.toLowerCase() === email.toLowerCase());
-351:   if (existingUser) {
-352:     return res.status(400).json({ success: false, error: 'An account with this email address already exists. Please log in.' });
-353:   }
-354: 
-355:   // Create new Family
-356:   const newFamilyId = dbState.family.length > 0 ? Math.max(...dbState.family.map(f => f.family_id)) + 1 : 1;
-357:   const newFamily = {
-358:     family_id: newFamilyId,
-359:     family_name: family_name,
-360:     created_at: new Date().toISOString().split('T')[0]
-361:   };
-362:   dbState.family.push(newFamily);
-363: 
-364:   // Create Admin User
-365:   const newUserId = dbState.users.length > 0 ? Math.max(...dbState.users.map(u => u.user_id)) + 1 : 1;
-366:   const newUser = {
-367:     user_id: newUserId,
-368:     family_id: newFamilyId,
-369:     first_name,
-370:     last_name: last_name || '',
-371:     email,
-372:     password: password,
-373:     role: role || 'parent',
-374:     avatar: avatar || '👑',
-375:     title: role === 'child' ? 'Child (Member)' : 'Parent (Family Admin)'
-376:   };
-377:   dbState.users.push(newUser);
-378: 
-379:   res.json({
-380:     success: true,
-381:     message: `Family account "${family_name}" created successfully!`,
-382:     user: newUser,
-383:     family: newFamily
-384:   });
-385: });
-386: 
-387: // Join Existing Family endpoint
-388: app.post('/api/auth/join-family', (req, res) => {
-389:   const { family_id, first_name, last_name, email, password, role, avatar } = req.body;
-390: 
-391:   const targetFamily = dbState.family.find(f => f.family_id === Number(family_id));
-392:   if (!targetFamily) {
-393:     return res.status(404).json({ success: false, error: `Family Account ID #${family_id} not found.` });
-394:   }
-395: 
-396:   if (!password) {
-397:     return res.status(400).json({ success: false, error: 'Password is required.' });
-398:   }
-399: 
-400:   if (password.length < 6) {
-401:     return res.status(400).json({ success: false, error: 'Password must be at least 6 characters long.' });
-402:   }
-403: 
-404:   const existingUser = dbState.users.find(u => u.email.toLowerCase() === email.toLowerCase());
-405:   if (existingUser) {
-406:     return res.status(400).json({ success: false, error: 'An account with this email already exists.' });
-407:   }
-408: 
-409:   const newUserId = dbState.users.length > 0 ? Math.max(...dbState.users.map(u => u.user_id)) + 1 : 1;
-410:   const newUser = {
-411:     user_id: newUserId,
-412:     family_id: Number(family_id),
-413:     first_name,
-414:     last_name: last_name || targetFamily.family_name.split(' ')[1] || '',
-415:     email,
-416:     password: password,
-417:     role: role || 'child',
-418:     avatar: avatar || '🧑‍💼',
-419:     title: role === 'parent' ? 'Parent (Co-Manager)' : 'Child (Contributor)'
-420:   };
-421:   dbState.users.push(newUser);
-422: 
-423:   res.json({
-424:     success: true,
-425:     message: `Joined ${targetFamily.family_name} successfully!`,
-426:     user: newUser,
-427:     family: targetFamily
-428:   });
-429: });
-430: 
-431: // 2. Users endpoint
-432: app.get('/api/users', (req, res) => {
-433:   res.json({ success: true, data: dbState.users });
-434: });
-435: 
-436: // 3. Categories endpoint
-437: app.get('/api/categories', (req, res) => {
-438:   res.json({ success: true, data: dbState.categories });
-439: });
-440: 
-441: // 4. Budget limits endpoints
-442: app.get('/api/budget-limits', (req, res) => {
-443:   res.json({ success: true, data: dbState.budgetLimits });
-444: });
-445: 
-446: app.post('/api/budget-limits', (req, res) => {
-447:   const { category_id, amount } = req.body;
-448:   const limitObj = dbState.budgetLimits.find(b => b.category_id === Number(category_id));
-449:   if (limitObj) {
-450:     limitObj.amount = parseFloat(amount);
-451:   } else {
-452:     const newId = dbState.budgetLimits.length + 1;
-453:     dbState.budgetLimits.push({
-454:       limit_id: newId,
-455:       family_id: 1,
-456:       category_id: Number(category_id),
-457:       amount: parseFloat(amount),
-458:       period: 'Monthly'
-459:     });
-460:   }
-461:   res.json({ success: true, message: 'Budget limit updated', data: dbState.budgetLimits });
-462: });
-463: 
-464: // 5. Pooled Fund endpoints
-465: app.get('/api/pooled-fund', (req, res) => {
-466:   res.json({ success: true, data: dbState.pooledFund });
-467: });
-468: 
-469: // 5b. Deposit Accounts endpoints
-470: app.get('/api/deposit-accounts', (req, res) => {
-471:   const { family_id } = req.query;
-472:   const accounts = family_id 
-473:     ? dbState.depositAccounts.filter(a => a.family_id === Number(family_id))
-474:     : dbState.depositAccounts;
-475:   res.json({ success: true, data: accounts });
-476: });
-477: 
-478: app.post('/api/deposit-accounts', (req, res) => {
-479:   const { family_id, user_id, bank_name, account_number, account_name, account_type } = req.body;
-480:   
-481:   if (!bank_name || !account_number || !account_name) {
-482:     return res.status(400).json({ success: false, error: 'Bank Name, Account Number, and Account Name are required.' });
-483:   }
-484: 
-485:   const newAccount = {
-486:     account_id: dbState.depositAccounts.length > 0 ? Math.max(...dbState.depositAccounts.map(a => a.account_id)) + 1 : 1,
-487:     family_id: Number(family_id) || 1,
-488:     user_id: Number(user_id) || 1,
-489:     bank_name,
-490:     account_number,
-495:     account_name,
-496:     account_type: account_type || 'savings',
-497:     is_primary: dbState.depositAccounts.length === 0,
-498:     created_at: new Date().toISOString()
-499:   };
-500: 
-501:   dbState.depositAccounts.push(newAccount);
-502:   res.json({ success: true, message: 'Deposit bank account linked successfully!', data: newAccount });
-503: });
-504: 
-505: app.delete('/api/deposit-accounts/:id', (req, res) => {
-506:   const { id } = req.params;
-507:   dbState.depositAccounts = dbState.depositAccounts.filter(a => a.account_id !== Number(id));
-508:   res.json({ success: true, message: 'Deposit account unlinked.' });
-509: });
-510: 
-511: app.get('/api/pool-transactions', (req, res) => {
-512:   res.json({ success: true, data: dbState.poolTransactions });
-513: });
-514: 
-515: app.post('/api/pool-transactions/contribute', (req, res) => {
-516:   const { user_id, amount, purpose } = req.body;
-517:   const numAmount = parseFloat(amount);
-518:   
-519:   dbState.pooledFund.balance += numAmount;
-520:   dbState.pooledFund.last_updated = new Date().toISOString();
-521: 
-522:   const newTx = {
-523:     transaction_id: dbState.poolTransactions.length + 1,
-524:     family_id: 1,
-525:     user_id: Number(user_id),
-526:     type: 'contribution',
-527:     amount: numAmount,
-528:     purpose: purpose || 'Pooled Contribution',
-529:     date: new Date().toISOString().split('T')[0],
-530:     created_at: new Date().toISOString()
-531:   };
-532:   
-533:   dbState.poolTransactions.push(newTx);
-534:   res.json({ success: true, transaction: newTx, pool: dbState.pooledFund });
-535: });
-536: 
-537: app.post('/api/pool-transactions/allocate', (req, res) => {
-538:   const { user_id, amount, purpose } = req.body;
-539:   const numAmount = parseFloat(amount);
-540: 
-541:   if (dbState.pooledFund.balance < numAmount) {
-542:     return res.status(400).json({ success: false, error: `Insufficient pool balance: ₦${dbState.pooledFund.balance.toLocaleString()}` });
-543:   }
-544: 
-545:   dbState.pooledFund.balance -= numAmount;
-546:   dbState.pooledFund.last_updated = new Date().toISOString();
-547: 
-548:   const newTx = {
-549:     transaction_id: dbState.poolTransactions.length + 1,
-550:     family_id: 1,
-551:     user_id: Number(user_id),
-552:     type: 'allocation',
-553:     amount: numAmount,
-554:     purpose: purpose || 'Pool Allocation',
-555:     date: new Date().toISOString().split('T')[0],
-556:     created_at: new Date().toISOString()
-557:   };
-558: 
-559:   dbState.poolTransactions.push(newTx);
-560:   res.json({ success: true, transaction: newTx, pool: dbState.pooledFund });
-561: });
-562: 
-563: // 6. Incomes endpoints
-564: app.get('/api/incomes', (req, res) => {
-565:   res.json({ success: true, data: dbState.incomes });
-566: });
-567: 
-568: app.post('/api/incomes', (req, res) => {
-569:   const newIncome = {
-570:     income_id: dbState.incomes.length + 1,
-571:     family_id: 1,
-572:     ...req.body,
-573:     amount: parseFloat(req.body.amount)
-574:   };
-575:   dbState.incomes.push(newIncome);
-576:   res.json({ success: true, data: newIncome });
-577: });
-578: 
-579: // 7. Expenses endpoints
-580: app.get('/api/expenses', (req, res) => {
-581:   res.json({ success: true, data: dbState.expenses });
-582: });
-583: 
-584: app.post('/api/expenses', (req, res) => {
-585:   const newExpense = {
-586:     expense_id: dbState.expenses.length + 1,
-587:     family_id: 1,
-588:     ...req.body,
-589:     amount: parseFloat(req.body.amount)
-590:   };
-591:   dbState.expenses.push(newExpense);
-592:   res.json({ success: true, data: newExpense });
-593: });
-594: 
-595: // 8. Notifications endpoints
-596: app.get('/api/notifications', (req, res) => {
-597:   res.json({ success: true, data: dbState.notifications });
-598: });
-599: 
-600: app.post('/api/notifications', (req, res) => {
-601:   const newNotif = {
-602:     notification_id: dbState.notifications.length + 1,
-603:     family_id: 1,
-604:     sent_at: new Date().toISOString(),
-605:     is_read: false,
-606:     ...req.body
-607:   };
-608:   dbState.notifications.push(newNotif);
-609:   res.json({ success: true, data: newNotif });
-610: });
-611: 
-612: app.put('/api/notifications/read-all', (req, res) => {
-613:   dbState.notifications.forEach(n => n.is_read = true);
-614:   res.json({ success: true, message: 'All notifications marked as read' });
-615: });
-616: 
-617: // 9. Send Automated Email via SMTP endpoint
-618: app.post('/api/notifications/send-email', async (req, res) => {
-619:   const { to, subject, html, text } = req.body;
-620: 
-621:   try {
-622:     const mailOptions = {
-623:       from: '"NaijaFamily Pooled Bank" <noreply@naijafamilybank.org.ng>',
-624:       to: to || 'family-members@okafor.org.ng',
-625:       subject: subject || 'Family Bank Alert',
-626:       text: text,
-627:       html: html
-628:     };
-629: 
-630:     console.log(`[SMTP DISPATCH] Sending mail to: ${mailOptions.to} | Subject: ${mailOptions.subject}`);
-631: 
-632:     res.json({
-633:       success: true,
-634:       message: 'SMTP Email notification dispatched successfully',
-635:       dispatchLog: {
-636:         to: mailOptions.to,
-637:         subject: mailOptions.subject,
-638:         timestamp: new Date().toISOString(),
-639:         smtpResponse: '250 2.0.0 OK Message accepted'
-640:       }
-641:     });
-642:   } catch (error) {
-643:     console.error('SMTP Send Error:', error);
-644:     res.status(500).json({ success: false, error: error.message });
-645:   }
-646: });
-647: 
-648: // Start Express API server
-649: app.listen(PORT, () => {
-650:   console.log(`=======================================================`);
-651:   console.log(`🚀 NaijaFamily Pooled Bank REST API Running on Port ${PORT}`);
-652:   console.log(`=======================================================`);
-653: });
-654: ```
-655: 
-656: ---
-657: 
-658: ### 2. Database Models / Schema (`backend/schema.sql`)
-659: 
-660: ```sql
-661: -- ====================================================================
-662: -- Database Schema for Web-Based Pooled Bank & Family Financial Planner
-663: -- Chapter 3 Section 3.5 Database Design (Tables 3.1 - 3.9)
-664: -- DBMS: MySQL
-665: -- ====================================================================
-666: 
-667: CREATE DATABASE IF NOT EXISTS family_pooled_bank_db;
-668: USE family_pooled_bank_db;
-669: 
-670: -- Table 3.2: family_table
-671: CREATE TABLE IF NOT EXISTS family_table (
-672:     family_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
-673:     family_name VARCHAR(100) NOT NULL,
-674:     created_at DATE NOT NULL
-675: ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-676: 
-677: -- Table 3.1: user_table
-678: CREATE TABLE IF NOT EXISTS user_table (
-679:     user_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
-680:     family_id INT(11) DEFAULT NULL,
-681:     first_name VARCHAR(100) NOT NULL,
-682:     last_name VARCHAR(100) NOT NULL,
-683:     email VARCHAR(255) NOT NULL UNIQUE,
-684:     password_hash VARCHAR(255) NOT NULL,
-685:     role ENUM('parent', 'child') NOT NULL DEFAULT 'parent',
-686:     FOREIGN KEY (family_id) REFERENCES family_table(family_id) ON DELETE CASCADE
-687: ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-688: 
-689: -- Table 3.3: category_table
-690: CREATE TABLE IF NOT EXISTS category_table (
-691:     category_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
-692:     family_id INT(11) NOT NULL,
-693:     category_name VARCHAR(100) NOT NULL,
-694:     FOREIGN KEY (family_id) REFERENCES family_table(family_id) ON DELETE CASCADE
-695: ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-696: 
-697: -- Table 3.4: income_table
-698: CREATE TABLE IF NOT EXISTS income_table (
-699:     income_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
-700:     user_id INT(11) NOT NULL,
-701:     family_id INT(11) NOT NULL,
-702:     source VARCHAR(100) NOT NULL,
-703:     amount DECIMAL(10, 2) NOT NULL,
-704:     date_received DATE NOT NULL,
-705:     FOREIGN KEY (user_id) REFERENCES user_table(user_id) ON DELETE CASCADE,
-706:     FOREIGN KEY (family_id) REFERENCES family_table(family_id) ON DELETE CASCADE
-707: ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-708: 
-709: -- Table 3.5: expense_table
-710: CREATE TABLE IF NOT EXISTS expense_table (
-711:     expense_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
-712:     user_id INT(11) NOT NULL,
-713:     family_id INT(11) NOT NULL,
-714:     category_id INT(11) NOT NULL,
-715:     amount DECIMAL(10, 2) NOT NULL,
-716:     payment_method VARCHAR(255) NOT NULL,
-717:     date_spent DATE NOT NULL,
-718:     description TEXT DEFAULT NULL,
-719:     FOREIGN KEY (user_id) REFERENCES user_table(user_id) ON DELETE CASCADE,
-720:     FOREIGN KEY (family_id) REFERENCES family_table(family_id) ON DELETE CASCADE,
-721:     FOREIGN KEY (category_id) REFERENCES category_table(category_id) ON DELETE CASCADE
-722: ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-723: 
-724: -- Table 3.6: budgetlimit_table
-725: CREATE TABLE IF NOT EXISTS budgetlimit_table (
-726:     limit_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
-727:     family_id INT(11) NOT NULL,
-728:     category_id INT(11) NOT NULL,
-729:     amount DECIMAL(10, 2) NOT NULL,
-730:     period VARCHAR(50) NOT NULL DEFAULT 'Monthly',
-731:     FOREIGN KEY (family_id) REFERENCES family_table(family_id) ON DELETE CASCADE,
-732:     FOREIGN KEY (category_id) REFERENCES category_table(category_id) ON DELETE CASCADE
-733: ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-734: 
-735: -- Table 3.7: notification_table
-736: CREATE TABLE IF NOT EXISTS notification_table (
-737:     notification_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
-738:     family_id INT(11) NOT NULL,
-739:     user_id INT(11) DEFAULT NULL,
-740:     type VARCHAR(100) NOT NULL,
-741:     message TEXT NOT NULL,
-742:     sent_at DATETIME NOT NULL,
-743:     is_read BOOLEAN NOT NULL DEFAULT FALSE,
-744:     FOREIGN KEY (family_id) REFERENCES family_table(family_id) ON DELETE CASCADE
-745: ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-746: 
-747: -- Table 3.8: pooledfund_table
-748: CREATE TABLE IF NOT EXISTS pooledfund_table (
-749:     pool_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
-750:     family_id INT(11) NOT NULL,
-751:     balance DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
-752:     last_updated DATETIME NOT NULL,
-753:     FOREIGN KEY (family_id) REFERENCES family_table(family_id) ON DELETE CASCADE
-754: ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-755: 
-756: -- Table 3.9: pooltransactions_table
-757: CREATE TABLE IF NOT EXISTS pooltransactions_table (
-758:     transaction_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
-759:     family_id INT(11) NOT NULL,
-760:     user_id INT(11) DEFAULT NULL,
-761:     type ENUM('contribution', 'allocation') NOT NULL,
-762:     amount DECIMAL(10, 2) NOT NULL,
-763:     purpose TEXT DEFAULT NULL,
-764:     date DATE NOT NULL,
-765:     created_at DATETIME NOT NULL,
-766:     FOREIGN KEY (family_id) REFERENCES family_table(family_id) ON DELETE CASCADE,
-767:     FOREIGN KEY (user_id) REFERENCES user_table(user_id) ON DELETE SET NULL
-768: ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-769: 
-770: -- Table 3.10: deposit_account_table
-771: CREATE TABLE IF NOT EXISTS deposit_account_table (
-772:     account_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
-773:     family_id INT(11) NOT NULL,
-774:     user_id INT(11) NOT NULL,
-775:     bank_name VARCHAR(100) NOT NULL,
-776:     account_number VARCHAR(20) NOT NULL,
-777:     account_name VARCHAR(100) NOT NULL,
-778:     account_type ENUM('savings', 'current', 'domiciliary') NOT NULL DEFAULT 'savings',
-779:     is_primary BOOLEAN NOT NULL DEFAULT FALSE,
-780:     created_at DATETIME NOT NULL,
-781:     FOREIGN KEY (family_id) REFERENCES family_table(family_id) ON DELETE CASCADE,
-782:     FOREIGN KEY (user_id) REFERENCES user_table(user_id) ON DELETE CASCADE
-783: ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-784: ```
-785: 
-786: ---
-787: 
-788: ### 3. Frontend Main Application (`src/App.jsx`)
-789: 
-790: ```javascript
-791: import React, { useState } from 'react';
-792: import Header from './components/Header';
-793: import Dashboard from './components/Dashboard';
-794: import PooledFundCard from './components/PooledFundCard';
-795: import BudgetManager from './components/BudgetManager';
-796: import PoolTransactionsLog from './components/PoolTransactionsLog';
-797: import PeriodicReport from './components/PeriodicReport';
-798: import NotificationDrawer from './components/NotificationDrawer';
-799: import AuthModal from './components/AuthModal';
-800: import { db } from './services/db';
-801: 
-802: export default function App() {
-803:   const users = db.getUsers();
-804:   const initialSession = db.getCurrentSession();
-805:   
-806:   // App state - defaults to null so app ALWAYS starts on Login/Registration screen
-807:   const [currentUser, setCurrentUser] = useState(initialSession?.user || null);
-808:   const [currentFamily, setCurrentFamily] = useState(initialSession?.family || null);
-809:   const [activeTab, setActiveTab] = useState('dashboard');
-810:   const [dbTick, setDbTick] = useState(0); // Trigger re-render on database updates
-811:   const [notifications, setNotifications] = useState(db.getNotifications());
-812: 
-813:   const handleDataChange = () => {
-814:     setDbTick(prev => prev + 1);
-815:     setNotifications(db.getNotifications());
-816:   };
-817: 
-818:   const handleLoginSuccess = (user, family) => {
-819:     setCurrentUser(user);
-820:     setCurrentFamily(family);
-821:     handleDataChange();
-822:   };
-823: 
-824:   const handleLogout = () => {
-825:     db.clearSession();
-826:     setCurrentUser(null);
-827:     setCurrentFamily(null);
-828:   };
-829: 
-830:   const handleResetData = () => {
-831:     if (window.confirm('Wipe all local data and reset application to a blank slate state?')) {
-832:       db.resetToDefault();
-833:       db.clearSession();
-834:       setCurrentUser(null);
-835:       setCurrentFamily(null);
-836:       handleDataChange();
-837:     }
-838:   };
-839: 
-840:   const pooledFund = db.getPooledFund();
-841:   const poolTransactions = db.getPoolTransactions();
-842: 
-843:   // Authentication Guard Screen
-844:   if (!currentUser) {
-845:     return <AuthModal onLoginSuccess={handleLoginSuccess} />;
-846:   }
-847: 
-848:   return (
-849:     <div className="app-container">
-850:       {/* Header with Navigation & Role Switcher */}
-851:       <Header 
-852:         currentUser={currentUser}
-853:         currentFamily={currentFamily}
-854:         users={users}
-855:         onSwitchUser={(user) => {
-856:           setCurrentUser(user);
-857:           db.setCurrentSession(user, currentFamily);
-858:         }}
-859:         onLogout={handleLogout}
-860:         activeTab={activeTab}
-861:         setActiveTab={setActiveTab}
-862:         notifications={notifications}
-863:         onToggleNotifications={() => setActiveTab('smtp')}
-864:         onResetData={handleResetData}
-865:       />
-866: 
-867:       {/* Main View Container */}
-868:       <main className="main-content">
-869:         {activeTab === 'dashboard' && (
-870:           <Dashboard 
-871:             currentUser={currentUser}
-872:             onDataChange={handleDataChange}
-873:           />
-874:         )}
-875: 
-876:         {activeTab === 'pool' && (
-877:           <div>
-878:             <PooledFundCard 
-879:               currentUser={currentUser}
-880:               poolData={pooledFund}
-881:               transactions={poolTransactions}
-882:               onDataChange={handleDataChange}
-883:             />
-884:             <PoolTransactionsLog transactions={poolTransactions} />
-885:           </div>
-886:         )}
-887: 
-888:         {activeTab === 'budgets' && (
-889:           <BudgetManager 
-890:             currentUser={currentUser}
-891:             onDataChange={handleDataChange}
-892:           />
-893:         )}
-894: 
-895:         {activeTab === 'logs' && (
-896:           <PoolTransactionsLog transactions={poolTransactions} />
-897:         )}
-898: 
-899:         {activeTab === 'reports' && (
-900:           <PeriodicReport />
-901:         )}
-902: 
-903:         {activeTab === 'smtp' && (
-904:           <NotificationDrawer 
-905:             notifications={notifications}
-906:             onDataChange={handleDataChange}
-907:           />
-908:         )}
-909:       </main>
-910: 
-911:       {/* App Footer */}
-912:       <footer style={{ background: 'var(--bg-secondary)', borderTop: '1px solid var(--border-color)', padding: '1.25rem 0', marginTop: 'auto', textAlign: 'center', fontSize: '0.825rem', color: 'var(--text-subtle)' }}>
-913:         <div style={{ maxWidth: '1320px', margin: '0 auto', padding: '0 1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-914:           <div>
-915:             © 2026 <strong>NaijaFamily Pooled Bank & Family Financial Planner</strong> • Designed for Nigerian Households
-916:           </div>
-917:           <div>
-918:             Built with React, Node.js REST Architecture, Chart.js & Nodemailer SMTP Engine
-919:           </div>
-920:         </div>
-921:       </footer>
-922:     </div>
-923:   );
-924: }
-925: ```
+---
 
+### Q5: How does the platform protect database credentials and Paystack API keys across environments?
+> **Answer:**
+> Security follows the **12-Factor App methodology**:
+> * All secrets, connection strings, and API keys are decoupled from version control and loaded into `process.env` at runtime using `dotenv`.
+> * The Aiven Cloud MySQL connection string (`mysql://avnadmin:***@...aivencloud.com:19258/defaultdb`) requires TLS/SSL encryption for data in transit.
+> * The Paystack keys (`PAYSTACK_SECRET_KEY` and `PAYSTACK_PUBLIC_KEY`) differentiate between `sk_test_...` (sandbox mode) and live keys. The codebase checks key prefixes and switches dynamically between simulated sandbox flows and live Paystack transaction initialization without changing the core business logic.
+
+---
+
+### Q6: Why did you use `DECIMAL(12, 2)` instead of `FLOAT` or `DOUBLE` for financial amounts in the database?
+> **Answer:**
+> `FLOAT` and `DOUBLE` are binary floating-point types governed by IEEE 754 standards. They represent numbers as fractional binary approximations, causing rounding errors when accumulating fractions (for example, `0.1 + 0.2 === 0.30000000000000004` in floating-point math). In a banking ledger, fractional approximations cause unexplainable currency losses.
+> In contrast, `DECIMAL(12, 2)` is an **exact fixed-point data type**. It stores values as binary-coded decimals (BCD) with guaranteed precision up to 12 digits, exactly 2 of which are decimal places. This ensures monetary calculations are accurate to the exact Kobo/Cent.
+
+---
+
+### Q7: If the live cloud database or network experiences high latency, how does the application maintain responsiveness for the user?
+> **Answer:**
+> The frontend implements an **Optimistic Client-Side Cache Strategy**:
+> * In `src/services/db.js`, mutations (such as logging an expense or contributing funds) immediately update the local reactive cache in memory and `localStorage`, providing immediate visual feedback to the user without a blocking spinner.
+> * The mutation simultaneously dispatches the HTTP request to the Express API in the background.
+> * Once the database confirms the transaction, `syncFromBackend(familyId)` reconciles any server-side autoincrement IDs, balances, and timestamps, ensuring eventual consistency without sacrificing UI responsiveness.
+
+---
+
+### Q8: What design pattern is used to handle email alerts without degrading the user experience during transaction processing?
+> **Answer:**
+> The system implements an **Asynchronous Non-Blocking Notification Pattern**.
+> When a contribution is verified in `paymentController.js` or a request is logged in `allocationController.js`:
+> 1. The database transaction is committed first.
+> 2. The HTTP response is returned immediately to the client with `res.json(...)`.
+> 3. The Nodemailer email functions (`sendContributionConfirmationEmail`, `sendEmail`) are invoked asynchronously with unchained promise catches:
+>    ```javascript
+>    sendContributionConfirmationEmail({ ... }).catch(err => {
+>      console.error('[CONTRIBUTION EMAIL ERROR]', err.message);
+>    });
+>    ```
+> This ensures that even if the external SMTP gateway experiences latency or timeouts, the user's banking transaction succeeds in milliseconds without being held up by external email networks.

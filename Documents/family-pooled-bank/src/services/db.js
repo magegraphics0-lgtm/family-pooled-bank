@@ -1,134 +1,31 @@
 /**
  * Database Service for Pooled Bank & Family Financial Planner
- * Implements Tables 3.1 - 3.9 from Chapter 3 System Design
+ * Interfaces dynamically with live REST API and Aiven MySQL Cloud database.
  */
 
-const STORAGE_KEY = 'family_pooled_bank_db_v3';
+const STORAGE_KEY = 'family_pooled_bank_db_v4';
 
-// Initial Database State with Isolated Member Accounts (Spotify Family Model)
+// Clean initial empty state (strictly zero/empty)
 const initialDatabase = {
-  family: [
-    {
-      family_id: 1,
-      family_name: 'The Okafor Household',
-      created_at: new Date().toISOString().split('T')[0]
-    }
-  ],
-  users: [
-    {
-      user_id: 1,
-      family_id: 1,
-      first_name: 'Emeka',
-      last_name: 'Okafor',
-      email: 'parent@onepot.app',
-      password: 'ParentPassword123!',
-      role: 'parent',
-      avatar: '👑',
-      title: 'Parent (Family Admin)'
-    },
-    {
-      user_id: 2,
-      family_id: 1,
-      first_name: 'Tobi',
-      last_name: 'Okafor',
-      email: 'child@onepot.app',
-      password: 'ChildPassword123!',
-      role: 'child',
-      avatar: '🧑‍🎓',
-      title: 'Child (Restricted)'
-    }
-  ],
-  categories: [
-    { category_id: 1, family_id: 1, category_name: 'Food & Provisions', icon: '🛒' },
-    { category_id: 2, family_id: 1, category_name: 'School Fees & Books', icon: '🎓' },
-    { category_id: 3, family_id: 1, category_name: 'House Rent & Maintenance', icon: '🏠' },
-    { category_id: 4, family_id: 1, category_name: 'Generator Fuel & PHCN', icon: '⚡' },
-    { category_id: 5, family_id: 1, category_name: 'Healthcare & Emergency', icon: '🏥' },
-    { category_id: 6, family_id: 1, category_name: 'Transport & Car Fuel', icon: '🚗' },
-    { category_id: 7, family_id: 1, category_name: 'Extended Family ("Black Tax")', icon: '🤝' },
-    { category_id: 8, family_id: 1, category_name: 'Savings & Investments', icon: '💰' }
-  ],
-  budgetLimits: [
-    { limit_id: 1, family_id: 1, category_id: 1, amount: 50000, period: 'Monthly' },
-    { limit_id: 2, family_id: 1, category_id: 2, amount: 25000, period: 'Monthly' },
-    { limit_id: 3, family_id: 1, category_id: 5, amount: 30000, period: 'Monthly' }
-  ],
+  family: [],
+  users: [],
+  family_members: [],
+  categories: [],
+  budgetLimits: [],
   pooledFund: {
-    pool_id: 1,
-    family_id: 1,
-    balance: 825000.00,
-    last_updated: new Date().toISOString()
+    pool_id: 0,
+    family_id: 0,
+    balance: 0.00,
+    emergency_fund_balance: 0.00,
+    auto_save_percentage: 5.00,
+    last_updated: null
   },
-  pooledFunds: [
-    {
-      pool_id: 1,
-      family_id: 1,
-      balance: 825000.00,
-      last_updated: new Date().toISOString()
-    }
-  ],
-  poolTransactions: [
-    {
-      transaction_id: 1,
-      family_id: 1,
-      user_id: 1,
-      type: 'contribution',
-      amount: 250000,
-      purpose: 'Demo seed contribution',
-      date: new Date().toISOString().split('T')[0],
-      created_at: new Date().toISOString()
-    }
-  ],
-  incomes: [
-    {
-      income_id: 1,
-      family_id: 1,
-      user_id: 1,
-      title: 'Demo Salary',
-      source: 'Primary Employment',
-      amount: 200000,
-      date_received: new Date().toISOString().split('T')[0],
-      notes: 'Seed income for demo account'
-    }
-  ],
-  expenses: [
-    {
-      expense_id: 1,
-      family_id: 1,
-      user_id: 1,
-      title: 'Demo Grocery Run',
-      description: 'Demo Grocery Run',
-      category_id: 1,
-      amount: 12500,
-      payment_method: 'Bank Transfer',
-      date_spent: new Date().toISOString().split('T')[0],
-      notes: 'Sample household expense'
-    }
-  ],
-  notifications: [
-    {
-      notification_id: 1,
-      family_id: 1,
-      user_id: 1,
-      message: 'Demo account is ready to use.',
-      type: 'info',
-      sent_at: new Date().toISOString(),
-      read: false
-    }
-  ],
-  depositAccounts: [
-    {
-      account_id: 1,
-      family_id: 1,
-      user_id: 1,
-      bank_name: 'Access Bank',
-      account_number: '0123456789',
-      account_name: 'Demo Family Savings',
-      account_type: 'savings',
-      is_primary: true,
-      created_at: new Date().toISOString()
-    }
-  ],
+  pooledFunds: [],
+  poolTransactions: [],
+  incomes: [],
+  expenses: [],
+  notifications: [],
+  depositAccounts: [],
   allocationRequests: []
 };
 
@@ -136,11 +33,14 @@ class LocalDatabase {
   constructor() {
     this.purgeOldDemoCache();
     this.data = this.loadData();
+    this.backendUrl = 'http://localhost:5000/api';
   }
 
   purgeOldDemoCache() {
     try {
       localStorage.removeItem('family_pooled_bank_db_v1');
+      localStorage.removeItem('family_pooled_bank_db_v2');
+      localStorage.removeItem('family_pooled_bank_db_v3');
     } catch {
       // ignore
     }
@@ -152,10 +52,16 @@ class LocalDatabase {
       if (stored) {
         const parsed = JSON.parse(stored);
         if (!parsed.allocationRequests) parsed.allocationRequests = [];
+        if (!parsed.categories) parsed.categories = [];
+        if (!parsed.budgetLimits) parsed.budgetLimits = [];
+        if (!parsed.poolTransactions) parsed.poolTransactions = [];
+        if (!parsed.expenses) parsed.expenses = [];
+        if (!parsed.notifications) parsed.notifications = [];
+        if (!parsed.pooledFunds) parsed.pooledFunds = [];
         return parsed;
       }
     } catch (e) {
-      console.warn('Failed to load from LocalStorage, falling back to seed database', e);
+      console.warn('Failed to load from LocalStorage, falling back to clean initial database', e);
     }
     this.saveData(initialDatabase);
     return JSON.parse(JSON.stringify(initialDatabase));
@@ -175,18 +81,105 @@ class LocalDatabase {
     return this.data;
   }
 
-  // --- BACKEND REST API SYNC HELPERS ---
+  // --- LIVE BACKEND REST API SYNCHRONIZATION ---
+
   async syncToBackend(endpoint, method = 'POST', bodyData = {}) {
     try {
-      const response = await fetch(`http://localhost:5000/api/${endpoint}`, {
+      const response = await fetch(`${this.backendUrl}/${endpoint}`, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(bodyData)
       });
       return await response.json();
     } catch (err) {
-      console.warn(`[Backend API Offline/Fallback] Could not reach http://localhost:5000/api/${endpoint}:`, err.message);
+      console.warn(`[Backend API Offline/Fallback] Could not reach ${this.backendUrl}/${endpoint}:`, err.message);
       return null;
+    }
+  }
+
+  /**
+   * Sync complete family financial state from live MySQL database
+   */
+  async syncFromBackend(familyId) {
+    if (!familyId) return;
+    const fid = Number(familyId);
+
+    try {
+      const [poolRes, txRes, bowlsRes, expRes, notifRes, usersRes, reqRes] = await Promise.all([
+        fetch(`${this.backendUrl}/pooled-fund?family_id=${fid}`).catch(() => null),
+        fetch(`${this.backendUrl}/pool-transactions?family_id=${fid}`).catch(() => null),
+        fetch(`${this.backendUrl}/bowls?family_id=${fid}`).catch(() => null),
+        fetch(`${this.backendUrl}/expenses?family_id=${fid}`).catch(() => null),
+        fetch(`${this.backendUrl}/notifications?family_id=${fid}`).catch(() => null),
+        fetch(`${this.backendUrl}/users?family_id=${fid}`).catch(() => null),
+        fetch(`${this.backendUrl}/allocations/requests?family_id=${fid}`).catch(() => null)
+      ]);
+
+      if (poolRes && poolRes.ok) {
+        const poolJson = await poolRes.json();
+        if (poolJson.success && poolJson.data) {
+          this.data.pooledFund = poolJson.data;
+          const existingIdx = this.data.pooledFunds.findIndex(p => p.family_id === fid);
+          if (existingIdx >= 0) {
+            this.data.pooledFunds[existingIdx] = poolJson.data;
+          } else {
+            this.data.pooledFunds.push(poolJson.data);
+          }
+        }
+      }
+
+      if (txRes && txRes.ok) {
+        const txJson = await txRes.json();
+        if (txJson.success && Array.isArray(txJson.data)) {
+          this.data.poolTransactions = txJson.data;
+        }
+      }
+
+      if (bowlsRes && bowlsRes.ok) {
+        const bowlsJson = await bowlsRes.json();
+        if (bowJsonOk(bowlsJson)) {
+          this.data.categories = bowlsJson.data;
+          this.data.budgetLimits = bowlsJson.data.map(b => ({
+            limit_id: b.id,
+            family_id: fid,
+            category_id: b.id,
+            amount: Number(b.allocated_amount || 0),
+            period: 'Monthly'
+          }));
+        }
+      }
+
+      if (expRes && expRes.ok) {
+        const expJson = await expRes.json();
+        if (expJson.success && Array.isArray(expJson.data)) {
+          this.data.expenses = expJson.data;
+        }
+      }
+
+      if (notifRes && notifRes.ok) {
+        const notifJson = await notifRes.json();
+        if (notifJson.success && Array.isArray(notifJson.data)) {
+          this.data.notifications = notifJson.data;
+        }
+      }
+
+      if (usersRes && usersRes.ok) {
+        const usersJson = await usersRes.json();
+        if (usersJson.success && Array.isArray(usersJson.data)) {
+          this.data.users = usersJson.data;
+        }
+      }
+
+      if (reqRes && reqRes.ok) {
+        const reqJson = await reqRes.json();
+        if (reqJson.success && Array.isArray(reqJson.data)) {
+          this.data.allocationRequests = reqJson.data;
+        }
+      }
+
+      this.saveData();
+    } catch (err) {
+      console.warn('[DB SYNC NOTICE] Remote backend sync partial or unavailable:', err.message);
     }
   }
 
@@ -197,14 +190,16 @@ class LocalDatabase {
   }
 
   getFamilyById(familyId) {
-    return (this.data.family || []).find(f => f.family_id === Number(familyId));
+    return (this.data.family || []).find(f => (f.family_id || f.id) === Number(familyId));
   }
 
   getCurrentSession() {
     try {
       const sessionStr = localStorage.getItem('family_bank_auth_session');
       if (sessionStr) {
-        return JSON.parse(sessionStr);
+        const session = JSON.parse(sessionStr);
+        if (session?.user?.avatar === '🧑‍🎓') session.user.avatar = '👤';
+        return session;
       }
     } catch (e) {
       console.warn('Failed to parse auth session:', e);
@@ -233,206 +228,227 @@ class LocalDatabase {
       return { success: true, message: 'If an account exists for this email address, you will receive password reset instructions shortly.' };
     }
     const cleanEmail = email.trim().toLowerCase();
-
-    // Trigger backend Nodemailer endpoint
     this.syncToBackend('auth/forgot-password', 'POST', { email: cleanEmail });
-
-    // Local DB mock fallback record
-    const user = this.data.users.find(u => u.email.toLowerCase() === cleanEmail);
-    if (user) {
-      const resetOtp = String(Math.floor(100000 + Math.random() * 900000));
-      user.reset_otp = resetOtp;
-      user.reset_expires = Date.now() + 15 * 60 * 1000;
-      this.saveData();
-    }
-
-    // Always silently return uniform success to prevent email enumeration
     return {
       success: true,
       message: 'If an account exists for this email address, you will receive password reset instructions shortly.'
     };
   }
 
-  loginUser({ email, password, userId }) {
-    let user = null;
-    if (userId) {
-      user = this.data.users.find(u => u.user_id === Number(userId));
-    } else if (email) {
-      const normalizedEmail = email.trim().toLowerCase();
-      user = this.data.users.find(u => 
-        u.email.toLowerCase() === normalizedEmail ||
-        (normalizedEmail === 'demo@familybank.com' && u.email === 'parent@onepot.app') ||
-        (normalizedEmail === 'emeka@onepot.app' && u.email === 'parent@onepot.app') ||
-        (normalizedEmail === 'child@familybank.com' && u.email === 'child@onepot.app') ||
-        (normalizedEmail === 'tobi@onepot.app' && u.email === 'child@onepot.app')
-      );
+  async loginUser({ email, password, userId }) {
+    // 1. Call backend /api/auth/login directly against live MySQL
+    try {
+      const res = await fetch(`${this.backendUrl}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email?.trim(), password, user_id: userId })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        const user = data.user;
+        const family = data.family;
+        this.setCurrentSession(user, family);
+
+        // Synchronize family into memory
+        if (!this.data.family) this.data.family = [];
+        const fIdx = this.data.family.findIndex(f => (f.id || f.family_id) === (family.id || family.family_id));
+        if (fIdx >= 0) this.data.family[fIdx] = family;
+        else this.data.family.push(family);
+
+        // Synchronize user into memory
+        if (!this.data.users) this.data.users = [];
+        const uIdx = this.data.users.findIndex(u => (u.id || u.user_id) === (user.id || user.user_id));
+        if (uIdx >= 0) this.data.users[uIdx] = user;
+        else this.data.users.push(user);
+
+        this.saveData();
+
+        // Hydrate live financial records for this family
+        await this.syncFromBackend(family.id || family.family_id);
+
+        return { user, family };
+      }
+      if (!res.ok && data.error) {
+        throw new Error(data.error);
+      }
+    } catch (err) {
+      if (err.message && !err.message.includes('fetch')) {
+        throw err;
+      }
+      // Offline fallback check
+      let user = null;
+      if (userId) {
+        user = this.data.users.find(u => (u.id || u.user_id) === Number(userId));
+      } else if (email) {
+        user = this.data.users.find(u => u.email.toLowerCase() === email.trim().toLowerCase());
+      }
+      if (user) {
+        const family = (this.data.family || []).find(f => (f.family_id || f.id) === user.family_id) || { id: user.family_id, family_id: user.family_id, family_name: 'Household' };
+        this.setCurrentSession(user, family);
+        return { user, family };
+      }
+      throw new Error(err.message || 'Unable to log in. Please check your credentials or connection.');
     }
-
-    if (!user) {
-      throw new Error('No user account found matching this email address.');
-    }
-
-    const isValidPassword = 
-      (user.password && password === user.password) ||
-      (user.email === 'parent@onepot.app' && (password === 'ParentPassword123!' || password === 'demo1234')) ||
-      (user.email === 'child@onepot.app' && (password === 'ChildPassword123!' || password === 'demo1234'));
-
-    if (!isValidPassword) {
-      throw new Error('Incorrect password. Please check your password and try again.');
-    }
-
-    const family = (this.data.family || []).find(f => f.family_id === user.family_id) || { family_id: user.family_id, family_name: 'Household' };
-
-    this.setCurrentSession(user, family);
-    this.syncToBackend('auth/login', 'POST', { email, password, user_id: userId });
-
-    return { user, family };
   }
 
-  registerFamily({ familyName, firstName, lastName, email, password, role, avatar }) {
-    if (!familyName || !firstName || !email) {
-      throw new Error('Family name, First name, and Email are required.');
+  async registerParent({ familyName, firstName, lastName, email, password, avatar }) {
+    if (!familyName || !firstName || !email || !password) {
+      throw new Error('Family name, First name, Email, and Password are required.');
     }
-
-    if (!password) {
-      throw new Error('Password is required.');
-    }
-
     if (password.length < 6) {
       throw new Error('Password must be at least 6 characters long.');
     }
 
-    const existing = this.data.users.find(u => u.email.toLowerCase() === email.toLowerCase());
-    if (existing) {
-      throw new Error('An account with this email already exists.');
+    try {
+      const backendRes = await fetch(`${this.backendUrl}/auth/register-parent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          family_name: familyName,
+          first_name: firstName,
+          last_name: lastName,
+          email,
+          password,
+          avatar
+        })
+      });
+      const data = await backendRes.json();
+      if (backendRes.ok && data.success) {
+        if (!this.data.family) this.data.family = [];
+        if (!this.data.users) this.data.users = [];
+        this.data.family.push(data.family);
+        this.data.users.push(data.user);
+        this.saveData();
+        this.setCurrentSession(data.user, data.family);
+        await this.syncFromBackend(data.family.id || data.family.family_id);
+        return { user: data.user, family: data.family, invite_code: data.invite_code };
+      }
+      if (!backendRes.ok && data.error) {
+        throw new Error(data.error);
+      }
+    } catch (err) {
+      throw err;
     }
-
-    if (!this.data.family) this.data.family = [];
-
-    const newFamilyId = this.data.family.length > 0 ? Math.max(...this.data.family.map(f => f.family_id)) + 1 : 1;
-    const newFamily = {
-      family_id: newFamilyId,
-      family_name: familyName,
-      created_at: new Date().toISOString().split('T')[0]
-    };
-    this.data.family.push(newFamily);
-
-    const newUserId = this.data.users.length > 0 ? Math.max(...this.data.users.map(u => u.user_id)) + 1 : 1;
-    const newUser = {
-      user_id: newUserId,
-      family_id: newFamilyId,
-      first_name: firstName,
-      last_name: lastName || '',
-      email,
-      password: password,
-      role: role || 'parent',
-      avatar: avatar || '👑',
-      title: role === 'child' ? 'Child (Member)' : 'Parent (Family Admin)'
-    };
-    this.data.users.push(newUser);
-
-    // Create pooled fund vault entry if missing
-    if (!this.data.pooledFunds) {
-      this.data.pooledFunds = this.data.pooledFund ? [this.data.pooledFund] : [];
-    }
-    const newPool = {
-      pool_id: this.data.pooledFunds.length + 1,
-      family_id: newFamilyId,
-      balance: 0.00,
-      last_updated: new Date().toISOString()
-    };
-    this.data.pooledFunds.push(newPool);
-
-    this.saveData();
-    this.setCurrentSession(newUser, newFamily);
-    this.syncToBackend('auth/register-family', 'POST', { family_name: familyName, first_name: firstName, last_name: lastName, email, password, role, avatar });
-
-    return { user: newUser, family: newFamily };
   }
 
-  joinFamily({ familyId, firstName, lastName, email, password, role, avatar }) {
-    const targetFamily = (this.data.family || []).find(f => f.family_id === Number(familyId));
-    if (!targetFamily) {
-      throw new Error(`Family Account #${familyId} does not exist.`);
+  async registerMember({ inviteCode, firstName, lastName, email, password, roleInFamily, avatar }) {
+    if (!inviteCode || !inviteCode.trim()) {
+      throw new Error('A valid family invite code is required to register as a family member.');
     }
-
-    if (!password) {
-      throw new Error('Password is required.');
+    if (!firstName || !email || !password) {
+      throw new Error('First name, Email, and Password are required.');
     }
-
     if (password.length < 6) {
       throw new Error('Password must be at least 6 characters long.');
     }
 
-    const existing = this.data.users.find(u => u.email.toLowerCase() === email.toLowerCase());
-    if (existing) {
-      throw new Error('An account with this email already exists.');
+    try {
+      const backendRes = await fetch(`${this.backendUrl}/auth/register-member`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          invite_code: inviteCode.trim().toUpperCase(),
+          first_name: firstName,
+          last_name: lastName,
+          email,
+          password,
+          role_in_family: roleInFamily || 'child',
+          avatar
+        })
+      });
+      const data = await backendRes.json();
+      if (backendRes.ok && data.success) {
+        if (!this.data.users) this.data.users = [];
+        this.data.users.push(data.user);
+        this.saveData();
+        this.setCurrentSession(data.user, data.family);
+        await this.syncFromBackend(data.family.id || data.family.family_id);
+        return { user: data.user, family: data.family };
+      }
+      if (!backendRes.ok && data.error) {
+        throw new Error(data.error);
+      }
+    } catch (err) {
+      throw err;
     }
+  }
 
-    const newUserId = this.data.users.length > 0 ? Math.max(...this.data.users.map(u => u.user_id)) + 1 : 1;
-    const newUser = {
-      user_id: newUserId,
-      family_id: Number(familyId),
-      first_name: firstName,
-      last_name: lastName || '',
-      email,
-      password: password,
-      role: role || 'child',
-      avatar: avatar || '🧑‍💼',
-      title: role === 'parent' ? 'Parent (Co-Manager)' : 'Child (Contributor)'
-    };
-    this.data.users.push(newUser);
+  async verifyInviteCode(code) {
+    if (!code || !code.trim()) {
+      return { valid: false, error: 'A family invite code is required.' };
+    }
+    const cleanCode = code.trim().toUpperCase();
 
-    this.saveData();
-    this.setCurrentSession(newUser, targetFamily);
-    this.syncToBackend('auth/join-family', 'POST', { family_id: familyId, first_name: firstName, last_name: lastName, email, password, role, avatar });
-
-    return { user: newUser, family: targetFamily };
+    try {
+      const response = await fetch(`${this.backendUrl}/family/verify-invite/${encodeURIComponent(cleanCode)}`);
+      const data = await response.json();
+      if (response.ok && data.valid) {
+        return {
+          valid: true,
+          family_name: data.family_name,
+          family_id: data.family_id,
+          invite_code: data.invite_code || cleanCode
+        };
+      }
+      return {
+        valid: false,
+        error: data.error || 'Invalid or expired family invite code.'
+      };
+    } catch {
+      return {
+        valid: false,
+        error: 'Unable to verify invite code. Please check your connection.'
+      };
+    }
   }
 
   // --- QUERY METHODS ---
 
   getUsers(familyId) {
     if (familyId) {
-      return this.data.users.filter(u => u.family_id === Number(familyId));
+      return (this.data.users || []).filter(u => u.family_id === Number(familyId));
     }
-    return this.data.users;
+    return this.data.users || [];
   }
 
   getUserById(id) {
-    return this.data.users.find(u => u.user_id === Number(id));
+    return (this.data.users || []).find(u => (u.id || u.user_id) === Number(id));
   }
 
   getCategories() {
-    return this.data.categories;
+    return this.data.categories || [];
   }
 
   getBudgetLimits(familyId) {
     if (familyId) {
-      const limits = this.data.budgetLimits.filter(b => b.family_id === Number(familyId));
+      const limits = (this.data.budgetLimits || []).filter(b => b.family_id === Number(familyId));
       if (limits.length > 0) return limits;
     }
-    return this.data.budgetLimits;
+    return this.data.budgetLimits || [];
   }
 
   getPooledFund(familyId) {
-    const fid = Number(familyId) || 1;
+    const fid = Number(familyId);
+    if (!fid) {
+      return { pool_id: 0, family_id: 0, balance: 0.00, emergency_fund_balance: 0.00, auto_save_percentage: 5, last_updated: null };
+    }
     if (!this.data.pooledFunds) {
       this.data.pooledFunds = this.data.pooledFund ? [this.data.pooledFund] : [];
     }
-    let fund = this.data.pooledFunds.find(p => p.family_id === fid);
+    let fund = this.data.pooledFunds.find(p => (p.family_id || p.id) === fid);
     if (!fund) {
-      if (this.data.pooledFund && this.data.pooledFund.family_id === fid) {
+      if (this.data.pooledFund && (this.data.pooledFund.family_id === fid || this.data.pooledFund.id === fid)) {
         fund = this.data.pooledFund;
       } else {
         fund = {
-          pool_id: this.data.pooledFunds.length + 1,
+          pool_id: fid,
           family_id: fid,
           balance: 0.00,
-          last_updated: new Date().toISOString()
+          emergency_fund_balance: 0.00,
+          auto_save_percentage: 5,
+          last_updated: null
         };
         this.data.pooledFunds.push(fund);
-        this.saveData();
       }
     }
     return fund;
@@ -451,8 +467,8 @@ class LocalDatabase {
     const newId = this.data.depositAccounts.length > 0 ? Math.max(...this.data.depositAccounts.map(a => a.account_id)) + 1 : 1;
     const account = {
       account_id: newId,
-      family_id: Number(familyId) || 1,
-      user_id: Number(userId) || 1,
+      family_id: Number(familyId),
+      user_id: Number(userId),
       bank_name: bankName,
       account_number: accountNumber,
       account_name: accountName,
@@ -462,14 +478,6 @@ class LocalDatabase {
     };
     this.data.depositAccounts.push(account);
     this.saveData();
-    this.syncToBackend('deposit-accounts', 'POST', {
-      family_id: familyId,
-      user_id: userId,
-      bank_name: bankName,
-      account_number: accountNumber,
-      account_name: accountName,
-      account_type: accountType
-    });
     return account;
   }
 
@@ -477,105 +485,128 @@ class LocalDatabase {
     if (!this.data.depositAccounts) this.data.depositAccounts = [];
     this.data.depositAccounts = this.data.depositAccounts.filter(a => a.account_id !== Number(accountId));
     this.saveData();
-    this.syncToBackend(`deposit-accounts/${accountId}`, 'DELETE', {});
   }
 
   getPoolTransactions(familyId) {
     const list = familyId 
-      ? this.data.poolTransactions.filter(t => t.family_id === Number(familyId))
-      : this.data.poolTransactions;
+      ? (this.data.poolTransactions || []).filter(t => t.family_id === Number(familyId))
+      : (this.data.poolTransactions || []);
     return [...list].sort((a, b) => new Date(b.created_at || b.date) - new Date(a.created_at || a.date));
   }
 
   getIncomes(familyId) {
     const list = familyId
-      ? this.data.incomes.filter(i => i.family_id === Number(familyId))
-      : this.data.incomes;
+      ? (this.data.incomes || []).filter(i => i.family_id === Number(familyId))
+      : (this.data.incomes || []);
     return [...list].sort((a, b) => new Date(b.date_received) - new Date(a.date_received));
   }
 
   getExpenses(familyId) {
     const list = familyId
-      ? this.data.expenses.filter(e => e.family_id === Number(familyId))
-      : this.data.expenses;
-    return [...list].sort((a, b) => new Date(b.date_spent) - new Date(a.date_spent));
+      ? (this.data.expenses || []).filter(e => e.family_id === Number(familyId))
+      : (this.data.expenses || []);
+    return [...list].sort((a, b) => new Date(b.date_spent || b.created_at) - new Date(a.date_spent || a.created_at));
   }
 
   getNotifications(familyId) {
     const list = familyId
-      ? this.data.notifications.filter(n => n.family_id === Number(familyId))
-      : this.data.notifications;
+      ? (this.data.notifications || []).filter(n => n.family_id === Number(familyId))
+      : (this.data.notifications || []);
     return [...list].sort((a, b) => new Date(b.sent_at) - new Date(a.sent_at));
   }
 
-  // --- MUTATION METHODS WITH BACKEND REST SYNC ---
+  // --- MUTATION METHODS WITH LIVE BACKEND REST SYNC ---
 
   addIncome(incomeData) {
     const user = this.getUserById(incomeData.user_id);
-    const newId = this.data.incomes.length > 0 ? Math.max(...this.data.incomes.map(i => i.income_id)) + 1 : 1;
+    const newId = (this.data.incomes || []).length > 0 ? Math.max(...this.data.incomes.map(i => i.income_id || 0)) + 1 : 1;
     const record = {
       income_id: newId,
       family_id: incomeData.family_id || (user ? user.family_id : 1),
       ...incomeData,
       amount: parseFloat(incomeData.amount)
     };
+    if (!this.data.incomes) this.data.incomes = [];
     this.data.incomes.push(record);
     this.saveData();
-    this.syncToBackend('incomes', 'POST', record);
     return record;
   }
 
   addExpense(expenseData) {
     const user = this.getUserById(expenseData.user_id);
-    const newId = this.data.expenses.length > 0 ? Math.max(...this.data.expenses.map(e => e.expense_id)) + 1 : 1;
+    const fid = Number(expenseData.family_id || user?.family_id);
+    const newId = (this.data.expenses || []).length > 0 ? Math.max(...this.data.expenses.map(e => e.expense_id || e.id || 0)) + 1 : 1;
     const record = {
       expense_id: newId,
-      family_id: expenseData.family_id || (user ? user.family_id : 1),
+      id: newId,
+      family_id: fid,
       ...expenseData,
       amount: parseFloat(expenseData.amount)
     };
-    this.data.expenses.push(record);
+    if (!this.data.expenses) this.data.expenses = [];
+    this.data.expenses.unshift(record);
     this.saveData();
-    this.syncToBackend('expenses', 'POST', record);
+
+    // Sync to backend MySQL
+    this.syncToBackend('expenses', 'POST', {
+      user_id: expenseData.user_id,
+      family_id: fid,
+      bowl_id: expenseData.category_id,
+      category_id: expenseData.category_id,
+      amount: expenseData.amount,
+      description: expenseData.description,
+      payment_method: expenseData.payment_method,
+      date_spent: expenseData.date_spent
+    }).then(() => this.syncFromBackend(fid));
+
     return record;
   }
 
-  updateBudgetLimit(categoryId, amount, familyId = 1) {
-    const fid = Number(familyId) || 1;
-    const limitObj = this.data.budgetLimits.find(b => b.category_id === Number(categoryId) && (b.family_id === fid || !b.family_id));
+  updateBudgetLimit(categoryId, amount, familyId) {
+    const fid = Number(familyId);
+    const limitObj = (this.data.budgetLimits || []).find(b => b.category_id === Number(categoryId) && b.family_id === fid);
     if (limitObj) {
       limitObj.amount = parseFloat(amount);
-      limitObj.family_id = fid;
     } else {
-      const newId = this.data.budgetLimits.length + 1;
+      if (!this.data.budgetLimits) this.data.budgetLimits = [];
       this.data.budgetLimits.push({
-        limit_id: newId,
+        limit_id: Number(categoryId),
         family_id: fid,
         category_id: Number(categoryId),
         amount: parseFloat(amount),
         period: 'Monthly'
       });
     }
+
+    // Also update category allocated amount in memory
+    const cat = (this.data.categories || []).find(c => c.id === Number(categoryId) || c.category_id === Number(categoryId));
+    if (cat) {
+      cat.allocated_amount = parseFloat(amount);
+    }
+
     this.saveData();
-    this.syncToBackend('budget-limits', 'POST', { category_id: categoryId, amount, family_id: fid });
+
+    // Sync to backend MySQL
+    this.syncToBackend('budget-limits', 'POST', {
+      category_id: categoryId,
+      bowl_id: categoryId,
+      amount,
+      family_id: fid
+    }).then(() => this.syncFromBackend(fid));
   }
 
   contributeToPool(userId, amount, purpose, familyId) {
     const user = this.getUserById(userId);
-    const fid = Number(familyId || user?.family_id || 1);
+    const fid = Number(familyId || user?.family_id);
     const numAmount = parseFloat(amount);
     const pool = this.getPooledFund(fid);
-    pool.balance += numAmount;
+    pool.balance = (pool.balance || 0) + numAmount;
     pool.last_updated = new Date().toISOString();
 
-    if (fid === 1 && this.data.pooledFund) {
-      this.data.pooledFund.balance = pool.balance;
-      this.data.pooledFund.last_updated = pool.last_updated;
-    }
-
-    const newTxId = this.data.poolTransactions.length + 1;
+    const newTxId = (this.data.poolTransactions || []).length + 1;
     const tx = {
       transaction_id: newTxId,
+      id: newTxId,
       family_id: fid,
       user_id: Number(userId),
       type: 'contribution',
@@ -584,32 +615,37 @@ class LocalDatabase {
       date: new Date().toISOString().split('T')[0],
       created_at: new Date().toISOString()
     };
-    this.data.poolTransactions.push(tx);
+    if (!this.data.poolTransactions) this.data.poolTransactions = [];
+    this.data.poolTransactions.unshift(tx);
     this.saveData();
-    this.syncToBackend('pool-transactions/contribute', 'POST', { user_id: userId, amount, purpose, family_id: fid });
+
+    // Sync to backend MySQL
+    this.syncToBackend('pool-transactions/contribute', 'POST', {
+      user_id: userId,
+      amount: numAmount,
+      purpose,
+      family_id: fid
+    }).then(() => this.syncFromBackend(fid));
+
     return tx;
   }
 
   allocateFromPool(userId, amount, purpose, familyId) {
     const user = this.getUserById(userId);
-    const fid = Number(familyId || user?.family_id || 1);
+    const fid = Number(familyId || user?.family_id);
     const numAmount = parseFloat(amount);
     const pool = this.getPooledFund(fid);
 
-    if (pool.balance < numAmount) {
-      throw new Error(`Insufficient pooled funds! Current balance is ₦${pool.balance.toLocaleString()}`);
+    if ((pool.balance || 0) < numAmount) {
+      throw new Error(`Insufficient pooled funds! Current balance is ₦${(pool.balance || 0).toLocaleString()}`);
     }
     pool.balance -= numAmount;
     pool.last_updated = new Date().toISOString();
 
-    if (fid === 1 && this.data.pooledFund) {
-      this.data.pooledFund.balance = pool.balance;
-      this.data.pooledFund.last_updated = pool.last_updated;
-    }
-
-    const newTxId = this.data.poolTransactions.length + 1;
+    const newTxId = (this.data.poolTransactions || []).length + 1;
     const tx = {
       transaction_id: newTxId,
+      id: newTxId,
       family_id: fid,
       user_id: Number(userId),
       type: 'allocation',
@@ -618,31 +654,41 @@ class LocalDatabase {
       date: new Date().toISOString().split('T')[0],
       created_at: new Date().toISOString()
     };
-    this.data.poolTransactions.push(tx);
+    if (!this.data.poolTransactions) this.data.poolTransactions = [];
+    this.data.poolTransactions.unshift(tx);
     this.saveData();
-    this.syncToBackend('pool-transactions/allocate', 'POST', { user_id: userId, amount, purpose, family_id: fid });
+
+    // Sync to backend MySQL
+    this.syncToBackend('allocations/direct', 'POST', {
+      user_id: userId,
+      amount: numAmount,
+      purpose,
+      family_id: fid
+    }).then(() => this.syncFromBackend(fid));
+
     return tx;
   }
 
   addNotification(notificationData) {
-    const newId = this.data.notifications.length + 1;
+    const newId = (this.data.notifications || []).length + 1;
     const notif = {
       notification_id: newId,
-      family_id: notificationData.family_id || (notificationData.user_id ? this.getUserById(notificationData.user_id)?.family_id : 1) || 1,
+      id: newId,
+      family_id: notificationData.family_id || (notificationData.user_id ? this.getUserById(notificationData.user_id)?.family_id : 0),
       sent_at: new Date().toISOString(),
       is_read: false,
       ...notificationData
     };
-    this.data.notifications.push(notif);
+    if (!this.data.notifications) this.data.notifications = [];
+    this.data.notifications.unshift(notif);
     this.saveData();
-    this.syncToBackend('notifications', 'POST', notif);
     return notif;
   }
 
-  markAllNotificationsRead() {
-    this.data.notifications.forEach(n => n.is_read = true);
+  markAllNotificationsRead(familyId) {
+    (this.data.notifications || []).forEach(n => { n.is_read = true; });
     this.saveData();
-    this.syncToBackend('notifications/read-all', 'PUT', {});
+    this.syncToBackend('notifications/read-all', 'PUT', { family_id: familyId });
   }
 
   // --- SMART BOWL ALLOCATION & CHILD REQUEST APPROVAL WORKFLOW ---
@@ -658,7 +704,7 @@ class LocalDatabase {
   requestAllocation({ familyId, childId, bowlId, amount, description }) {
     if (!this.data.allocationRequests) this.data.allocationRequests = [];
     const child = this.getUserById(childId) || { user_id: childId, first_name: 'Child', last_name: 'Contributor', role: 'child' };
-    const fid = Number(familyId || child.family_id || 1);
+    const fid = Number(familyId || child.family_id);
     const numAmount = parseFloat(amount);
 
     if (!numAmount || numAmount <= 0) {
@@ -666,7 +712,7 @@ class LocalDatabase {
     }
 
     const categories = this.getCategories();
-    const bowl = categories.find(c => c.category_id === Number(bowlId)) || { category_id: bowlId, category_name: 'Smart Bowl' };
+    const bowl = categories.find(c => c.category_id === Number(bowlId) || c.id === Number(bowlId)) || { category_id: bowlId, category_name: 'Smart Bowl' };
     const bowlName = bowl.category_name;
     const childName = `${child.first_name || ''} ${child.last_name || ''}`.trim() || 'Child';
 
@@ -687,21 +733,19 @@ class LocalDatabase {
       status: 'pending',
       created_at: new Date().toISOString()
     };
-    this.data.allocationRequests.push(request);
+    this.data.allocationRequests.unshift(request);
 
     // Route real-time notification alert to Parent accounts
     const parents = this.getUsers(fid).filter(u => u.role === 'parent');
-    const parentRecipients = parents.length > 0 ? parents : [{ user_id: 1 }];
-
     const notifMessage = `${childName} requested allocation of ₦${numAmount.toLocaleString()} for ${bowlName}`;
 
-    parentRecipients.forEach(p => {
-      const notifId = this.data.notifications.length + 1;
+    parents.forEach(p => {
+      const notifId = (this.data.notifications || []).length + 1;
       this.data.notifications.unshift({
         id: notifId,
         notification_id: notifId,
         family_id: fid,
-        user_id: p.user_id,
+        user_id: p.user_id || p.id,
         type: 'allocation_request',
         message: notifMessage,
         amount: numAmount,
@@ -718,13 +762,15 @@ class LocalDatabase {
     });
 
     this.saveData();
+
+    // Call backend API
     this.syncToBackend('allocations/request', 'POST', {
       family_id: fid,
       child_id: childId,
       bowl_id: bowlId,
       amount: numAmount,
       description
-    });
+    }).then(() => this.syncFromBackend(fid));
 
     return request;
   }
@@ -743,26 +789,22 @@ class LocalDatabase {
 
     request.status = 'approved';
     request.decided_at = new Date().toISOString();
-    request.decision_by_user_id = Number(approvedByUserId || 1);
+    request.decision_by_user_id = Number(approvedByUserId);
 
     // Deduct from shared pool
     const pool = this.getPooledFund(request.family_id);
     pool.balance = Math.max(0, (pool.balance || 0) - request.amount);
     pool.last_updated = new Date().toISOString();
 
-    if (request.family_id === 1 && this.data.pooledFund) {
-      this.data.pooledFund.balance = pool.balance;
-      this.data.pooledFund.last_updated = pool.last_updated;
-    }
-
     // Deduct / update appropriate Smart Bowl balance
-    const category = this.data.categories.find(c => c.category_id === request.bowl_id);
+    const category = (this.data.categories || []).find(c => c.category_id === request.bowl_id || c.id === request.bowl_id);
     const bowlName = category ? category.category_name : request.bowl_name;
 
     // Record in expenses
-    const newExpId = this.data.expenses.length > 0 ? Math.max(...this.data.expenses.map(e => e.expense_id)) + 1 : 1;
-    this.data.expenses.push({
+    const newExpId = (this.data.expenses || []).length > 0 ? Math.max(...this.data.expenses.map(e => e.expense_id || e.id || 0)) + 1 : 1;
+    this.data.expenses.unshift({
       expense_id: newExpId,
+      id: newExpId,
       family_id: request.family_id,
       user_id: request.child_id,
       category_id: request.bowl_id,
@@ -777,7 +819,7 @@ class LocalDatabase {
     });
 
     // Update parent notification card status
-    this.data.notifications.forEach(n => {
+    (this.data.notifications || []).forEach(n => {
       if (n.request_id === request.id) {
         n.status = 'approved';
         n.is_read = true;
@@ -785,7 +827,7 @@ class LocalDatabase {
     });
 
     // Notify the child
-    const childNotifId = this.data.notifications.length + 1;
+    const childNotifId = (this.data.notifications || []).length + 1;
     this.data.notifications.unshift({
       id: childNotifId,
       notification_id: childNotifId,
@@ -802,10 +844,12 @@ class LocalDatabase {
     });
 
     this.saveData();
+
+    // Sync to backend MySQL
     this.syncToBackend(`allocations/${request.id}/approve`, 'POST', {
       user_id: approvedByUserId,
       approved_by_user_id: approvedByUserId
-    });
+    }).then(() => this.syncFromBackend(request.family_id));
 
     return request;
   }
@@ -824,10 +868,10 @@ class LocalDatabase {
 
     request.status = 'rejected';
     request.decided_at = new Date().toISOString();
-    request.decision_by_user_id = Number(rejectedByUserId || 1);
+    request.decision_by_user_id = Number(rejectedByUserId);
 
     // Update parent notification card status
-    this.data.notifications.forEach(n => {
+    (this.data.notifications || []).forEach(n => {
       if (n.request_id === request.id) {
         n.status = 'rejected';
         n.is_read = true;
@@ -835,7 +879,7 @@ class LocalDatabase {
     });
 
     // Notify the child
-    const childNotifId = this.data.notifications.length + 1;
+    const childNotifId = (this.data.notifications || []).length + 1;
     this.data.notifications.unshift({
       id: childNotifId,
       notification_id: childNotifId,
@@ -852,14 +896,19 @@ class LocalDatabase {
     });
 
     this.saveData();
+
+    // Sync to backend MySQL
     this.syncToBackend(`allocations/${request.id}/reject`, 'POST', {
       user_id: rejectedByUserId,
       rejected_by_user_id: rejectedByUserId
-    });
+    }).then(() => this.syncFromBackend(request.family_id));
 
     return request;
   }
 }
 
-export const db = new LocalDatabase();
+function bowJsonOk(bowlsJson) {
+  return bowlsJson && bowlsJson.success && Array.isArray(bowlsJson.data);
+}
 
+export const db = new LocalDatabase();

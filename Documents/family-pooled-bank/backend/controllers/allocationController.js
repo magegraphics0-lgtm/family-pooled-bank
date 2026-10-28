@@ -1,19 +1,16 @@
 /**
  * OnePot Fund Allocation Controller (Parent vs. Child RBAC & Approval Workflow)
- * 
  * Chapter 3 RBAC Design:
  * - Parent: Full authorization to allocate pooled funds directly to Smart Bowls.
  * - Child: Restricted. Cannot allocate funds directly; can only submit Allocation Requests.
  * - Parent Approval Feed: Pending child requests trigger notifications to Parents with inline Accept/Reject.
  * - Approval Execution: Deducts from pooled bank, deducts/updates Smart Bowl balance, updates request status, and notifies Child.
+ * Connected directly to active MySQL database (Aiven Cloud).
  */
 
+const db = require('../models/db');
 const dbState = require('../models/dbState');
 const { sendEmail } = require('../services/emailService');
-
-if (!dbState.allocation_requests) {
-  dbState.allocation_requests = [];
-}
 
 /**
  * 1. Submit Allocation Request (Child Contributor Workflow)
@@ -40,110 +37,85 @@ async function createAllocationRequest(req, res) {
       });
     }
 
-    // Resolve Child User
-    const child = dbState.users.find(u => u.user_id === effectiveChildId) || {
-      user_id: effectiveChildId,
-      first_name: 'Child',
-      last_name: 'Contributor',
-      role: 'child'
-    };
+    // Resolve Child User from MySQL
+    let child = null;
+    const dbChildUsers = await db.query('SELECT * FROM users WHERE id = ? LIMIT 1', [effectiveChildId]);
+    if (dbChildUsers && dbChildUsers.length > 0) {
+      child = dbChildUsers[0];
+    } else {
+      child = dbState.users.find(u => (u.id || u.user_id) === effectiveChildId);
+    }
 
-    // Resolve Family
-    const effectiveFamilyId = Number(family_id || child.family_id || 1);
+    if (!child) {
+      return res.status(404).json({ success: false, error: 'Child user account not found.' });
+    }
 
-    // Resolve Smart Bowl
-    const bowl = dbState.bowls.find(b => b.id === effectiveBowlId) || {
-      id: effectiveBowlId,
-      category_name: 'Smart Bowl',
-      allocated_amount: 0,
-      spent_amount: 0
-    };
+    const effectiveFamilyId = Number(family_id || child.family_id);
 
-    const requestId = dbState.allocation_requests.length + 1;
+    // Resolve Smart Bowl from MySQL
+    let bowl = null;
+    const dbBowls = await db.query('SELECT * FROM bowls WHERE id = ? LIMIT 1', [effectiveBowlId]);
+    if (dbBowls && dbBowls.length > 0) {
+      bowl = dbBowls[0];
+    } else {
+      bowl = dbState.bowls.find(b => b.id === effectiveBowlId);
+    }
+
+    const bowlName = bowl ? bowl.category_name : 'Smart Bowl';
     const childFullName = `${child.first_name || ''} ${child.last_name || ''}`.trim() || 'Child Member';
 
-    // 1. Stage pending allocation request
+    // 1. Stage in expenses table as pending (Chapter 3 schema Table 3.6)
+    const expenseInsert = await db.query(
+      'INSERT INTO expenses (family_id, bowl_id, requested_by_user_id, amount, description, status, is_emergency) VALUES (?, ?, ?, ?, ?, "pending", 0)',
+      [effectiveFamilyId, effectiveBowlId, child.id || effectiveChildId, numAmount, description || `Allocation for ${bowlName}`]
+    );
+    const requestId = expenseInsert?.insertId || Date.now();
+
+    const notifMessage = `${childFullName} requested allocation of ₦${numAmount.toLocaleString()} for ${bowlName}`;
+
+    // 2. Query parents for real-time notification alert routed to Parent accounts
+    const parents = await db.query('SELECT * FROM users WHERE family_id = ? AND role = "parent"', [effectiveFamilyId]);
+    if (parents && parents.length > 0) {
+      for (const parent of parents) {
+        await db.query(
+          'INSERT INTO notifications (family_id, user_id, message, type, is_read) VALUES (?, ?, ?, "allocation_request", 0)',
+          [effectiveFamilyId, parent.id, notifMessage]
+        );
+      }
+
+      // 3. Asynchronously notify parent via SMTP if configured
+      try {
+        const parentEmails = parents.map(p => p.email).filter(Boolean);
+        if (parentEmails.length > 0) {
+          sendEmail({
+            to: parentEmails.join(', '),
+            subject: `🔔 New Fund Allocation Request: ${childFullName} (₦${numAmount.toLocaleString()})`,
+            text: `${notifMessage}\nReason: ${description || 'N/A'}\nPlease log into OnePot to Accept or Reject this request.`,
+            html: `<p><strong>${notifMessage}</strong></p><p>Reason: ${description || 'N/A'}</p><p>Please log in to your OnePot Parent Dashboard to Accept or Reject.</p>`
+          }).catch(e => console.warn('[SMTP ALLOCATION NOTICE]', e.message));
+        }
+      } catch {
+        // non-blocking
+      }
+    }
+
     const newRequest = {
       id: requestId,
       request_id: requestId,
       family_id: effectiveFamilyId,
-      child_id: child.user_id,
+      child_id: child.id || effectiveChildId,
       child_name: childFullName,
-      bowl_id: bowl.id,
-      bowl_name: bowl.category_name,
+      bowl_id: effectiveBowlId,
+      bowl_name: bowlName,
       amount: numAmount,
-      description: description || `Allocation for ${bowl.category_name}`,
+      description: description || `Allocation for ${bowlName}`,
       status: 'pending',
-      created_at: new Date().toISOString(),
-      decided_at: null,
-      decision_by_user_id: null
+      created_at: new Date().toISOString()
     };
-    dbState.allocation_requests.push(newRequest);
-
-    // 2. Also stage in expenses table as pending (mirrors Table 3.6 in schema.sql)
-    const stagedExpense = {
-      id: dbState.expenses.length + 1,
-      expense_id: dbState.expenses.length + 1,
-      family_id: effectiveFamilyId,
-      bowl_id: bowl.id,
-      requested_by_user_id: child.user_id,
-      user_id: child.user_id,
-      amount: numAmount,
-      description: description || `Allocation request for ${bowl.category_name}`,
-      status: 'pending',
-      is_emergency: false,
-      date_spent: new Date().toISOString().split('T')[0],
-      created_at: new Date().toISOString(),
-      request_id: requestId
-    };
-    dbState.expenses.push(stagedExpense);
-
-    // 3. Generate real-time notification alert routed to Parent accounts
-    const parents = dbState.users.filter(u => u.family_id === effectiveFamilyId && u.role === 'parent');
-    const parentRecipients = parents.length > 0 ? parents : [dbState.users[0]];
-
-    const notifMessage = `${childFullName} requested allocation of ₦${numAmount.toLocaleString()} for ${bowl.category_name}`;
-
-    parentRecipients.forEach(parent => {
-      const notifId = dbState.notifications.length + 1;
-      dbState.notifications.push({
-        id: notifId,
-        notification_id: notifId,
-        family_id: effectiveFamilyId,
-        user_id: parent.user_id,
-        type: 'allocation_request',
-        message: notifMessage,
-        amount: numAmount,
-        request_id: requestId,
-        child_id: child.user_id,
-        child_name: childFullName,
-        bowl_id: bowl.id,
-        bowl_name: bowl.category_name,
-        description: description || '',
-        status: 'pending',
-        is_read: false,
-        sent_at: new Date().toISOString()
-      });
-    });
-
-    // 4. Asynchronously notify parent via SMTP if configured
-    try {
-      const parentEmails = parentRecipients.map(p => p.email).filter(Boolean);
-      if (parentEmails.length > 0) {
-        sendEmail({
-          to: parentEmails.join(', '),
-          subject: `🔔 New Fund Allocation Request: ${childFullName} (₦${numAmount.toLocaleString()})`,
-          text: `${notifMessage}\nReason: ${description || 'N/A'}\nPlease log into OnePot to Accept or Reject this request.`,
-          html: `<p><strong>${notifMessage}</strong></p><p>Reason: ${description || 'N/A'}</p><p>Please log in to your OnePot Parent Dashboard to Accept or Reject.</p>`
-        }).catch(e => console.warn('[SMTP ALLOCATION NOTICE] SMTP email dispatch note:', e.message));
-      }
-    } catch {
-      // SMTP non-blocking
-    }
 
     return res.status(201).json({
       success: true,
-      message: `Allocation request of ₦${numAmount.toLocaleString()} for ${bowl.category_name} submitted for parent approval.`,
+      message: `Allocation request of ₦${numAmount.toLocaleString()} for ${bowlName} submitted for parent approval.`,
       data: newRequest
     });
   } catch (error) {
@@ -160,132 +132,93 @@ async function approveAllocation(req, res) {
   try {
     const requestId = Number(req.params.id);
     const { user_id, approved_by_user_id } = req.body;
-    const parentUserId = Number(approved_by_user_id || user_id || 1);
+    const parentUserId = Number(approved_by_user_id || user_id);
 
-    // RBAC Permission Check: Confirm Approver is Parent
-    const approver = dbState.users.find(u => u.user_id === parentUserId);
-    if (approver && approver.role !== 'parent') {
+    if (!parentUserId) {
+      return res.status(400).json({ success: false, error: 'Parent approver user ID is required.' });
+    }
+
+    // RBAC Permission Check: Confirm Approver is Parent from MySQL
+    const approvers = await db.query('SELECT * FROM users WHERE id = ? LIMIT 1', [parentUserId]);
+    const approver = approvers && approvers.length > 0 ? approvers[0] : null;
+    if (!approver || approver.role !== 'parent') {
       return res.status(403).json({
         success: false,
         error: 'Access Denied: Only Parent Managers are authorized to approve fund allocations.'
       });
     }
 
-    // Find the request
-    let request = dbState.allocation_requests.find(r => r.id === requestId || r.request_id === requestId);
-    if (!request) {
-      // Fallback: check if id matched notification_id with request_id
-      const notif = dbState.notifications.find(n => n.id === requestId || n.notification_id === requestId);
-      if (notif && notif.request_id) {
-        request = dbState.allocation_requests.find(r => r.id === notif.request_id);
-      }
-    }
-
-    if (!request) {
+    // Find the request/expense in MySQL
+    const expenses = await db.query('SELECT * FROM expenses WHERE id = ? LIMIT 1', [requestId]);
+    if (!expenses || expenses.length === 0) {
       return res.status(404).json({ success: false, error: 'Allocation request not found.' });
     }
+    const request = expenses[0];
 
     if (request.status === 'approved') {
       return res.json({ success: true, message: 'This allocation request is already approved.', data: request });
     }
 
-    // Update Request Status
-    request.status = 'approved';
-    request.decided_at = new Date().toISOString();
-    request.decision_by_user_id = parentUserId;
+    const requestAmount = Number(request.amount);
 
-    // Deduct / update appropriate Smart Bowl balance
-    const bowl = dbState.bowls.find(b => b.id === Number(request.bowl_id));
-    if (bowl) {
-      bowl.spent_amount = (bowl.spent_amount || 0) + Number(request.amount);
-      if (bowl.balance !== undefined) {
-        bowl.balance = Math.max(0, bowl.balance - Number(request.amount));
-      }
+    // Verify family pot balance in MySQL
+    const famRows = await db.query('SELECT * FROM families WHERE id = ? LIMIT 1', [request.family_id]);
+    if (!famRows || famRows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Family pot account not found.' });
     }
+    const family = famRows[0];
+    const currentPotBalance = Number(family.total_pot_balance || 0);
 
-    // Deduct from shared family pot balance
-    const family = dbState.families.find(f => f.family_id === Number(request.family_id)) || dbState.families[0];
-    if (family) {
-      family.total_pot_balance = Math.max(0, (family.total_pot_balance || 0) - Number(request.amount));
-    }
-
-    // Update staged expense if present, or add new approved expense
-    const stagedExpense = dbState.expenses.find(e => e.request_id === request.id);
-    if (stagedExpense) {
-      stagedExpense.status = 'approved';
-    } else {
-      dbState.expenses.push({
-        id: dbState.expenses.length + 1,
-        expense_id: dbState.expenses.length + 1,
-        family_id: request.family_id,
-        bowl_id: request.bowl_id,
-        requested_by_user_id: request.child_id,
-        user_id: request.child_id,
-        amount: request.amount,
-        description: `Approved Allocation: ${request.description || request.bowl_name}`,
-        status: 'approved',
-        is_emergency: false,
-        date_spent: new Date().toISOString().split('T')[0],
-        created_at: new Date().toISOString()
+    if (currentPotBalance < requestAmount) {
+      return res.status(400).json({
+        success: false,
+        error: `Insufficient funds in family pot! Available balance is ₦${currentPotBalance.toLocaleString()}, but request is ₦${requestAmount.toLocaleString()}`
       });
     }
 
-    // Record in ledger approvals table
-    dbState.approvals.push({
-      id: dbState.approvals.length + 1,
-      expense_id: stagedExpense ? stagedExpense.id : dbState.expenses.length,
-      approved_by_user_id: parentUserId,
-      status: 'approved',
-      decision_note: `Approved allocation of ₦${Number(request.amount).toLocaleString()} for ${request.bowl_name}`,
-      decided_at: new Date().toISOString()
-    });
+    // 1. Update Request Status in expenses
+    await db.query('UPDATE expenses SET status = "approved" WHERE id = ?', [requestId]);
 
-    // Update all matching parent notifications to 'approved'
-    dbState.notifications.forEach(n => {
-      if (n.request_id === request.id) {
-        n.status = 'approved';
-        n.is_read = true;
-      }
-    });
+    // 2. Deduct from shared family pot balance
+    await db.query('UPDATE families SET total_pot_balance = total_pot_balance - ? WHERE id = ?', [requestAmount, family.id]);
 
-    // Route real-time notification alert to Child
-    const childUser = dbState.users.find(u => u.user_id === Number(request.child_id));
-    const childNotifId = dbState.notifications.length + 1;
-    const approverName = approver ? `${approver.first_name} ${approver.last_name}` : 'Parent Admin';
-    const childMessage = `Your allocation request of ₦${Number(request.amount).toLocaleString()} for ${request.bowl_name} has been approved by ${approverName}.`;
+    // 3. Update appropriate Smart Bowl balance
+    await db.query('UPDATE bowls SET spent_amount = spent_amount + ? WHERE id = ?', [requestAmount, request.bowl_id]);
 
-    dbState.notifications.push({
-      id: childNotifId,
-      notification_id: childNotifId,
-      family_id: request.family_id,
-      user_id: request.child_id,
-      type: 'allocation_approved',
-      message: childMessage,
-      request_id: request.id,
-      amount: request.amount,
-      bowl_name: request.bowl_name,
-      status: 'approved',
-      is_read: false,
-      sent_at: new Date().toISOString()
-    });
+    // 4. Record in ledger approvals table
+    await db.query(
+      'INSERT INTO approvals (expense_id, approved_by_user_id, status, decision_note, decided_at) VALUES (?, ?, "approved", ?, NOW())',
+      [requestId, parentUserId, `Approved allocation of ₦${requestAmount.toLocaleString()}`]
+    );
+
+    // 5. Route real-time notification alert to Child
+    const childUsers = await db.query('SELECT * FROM users WHERE id = ? LIMIT 1', [request.requested_by_user_id]);
+    const childUser = childUsers && childUsers.length > 0 ? childUsers[0] : null;
+    const approverName = `${approver.first_name} ${approver.last_name || ''}`.trim() || 'Parent Admin';
+    const childMessage = `Your allocation request of ₦${requestAmount.toLocaleString()} has been approved by ${approverName}.`;
+
+    await db.query(
+      'INSERT INTO notifications (family_id, user_id, message, type, is_read) VALUES (?, ?, ?, "allocation_approved", 0)',
+      [request.family_id, request.requested_by_user_id, childMessage]
+    );
 
     // Async SMTP notification to child
     if (childUser?.email) {
       sendEmail({
         to: childUser.email,
-        subject: `✅ Allocation Approved: ₦${Number(request.amount).toLocaleString()} for ${request.bowl_name}`,
+        subject: `✅ Allocation Approved: ₦${requestAmount.toLocaleString()}`,
         text: childMessage,
-        html: `<p><strong>${childMessage}</strong></p><p>Funds have been allocated to the <strong>${request.bowl_name}</strong> Smart Bowl.</p>`
+        html: `<p><strong>${childMessage}</strong></p><p>Funds have been allocated from the Family Pot.</p>`
       }).catch(() => {});
     }
 
     return res.json({
       success: true,
-      message: `Allocation request of ₦${Number(request.amount).toLocaleString()} approved successfully.`,
+      message: `Allocation request of ₦${requestAmount.toLocaleString()} approved successfully.`,
       data: {
-        request,
-        total_pot_balance: family?.total_pot_balance,
-        bowl
+        id: requestId,
+        status: 'approved',
+        total_pot_balance: Math.max(0, currentPotBalance - requestAmount)
       }
     });
   } catch (error) {
@@ -302,93 +235,51 @@ async function rejectAllocation(req, res) {
   try {
     const requestId = Number(req.params.id);
     const { user_id, rejected_by_user_id, reason } = req.body;
-    const parentUserId = Number(rejected_by_user_id || user_id || 1);
+    const parentUserId = Number(rejected_by_user_id || user_id);
 
-    // RBAC Permission Check: Confirm Approver is Parent
-    const rejector = dbState.users.find(u => u.user_id === parentUserId);
-    if (rejector && rejector.role !== 'parent') {
+    if (!parentUserId) {
+      return res.status(400).json({ success: false, error: 'Parent approver user ID is required.' });
+    }
+
+    // RBAC Permission Check: Confirm Approver is Parent from MySQL
+    const approvers = await db.query('SELECT * FROM users WHERE id = ? LIMIT 1', [parentUserId]);
+    const approver = approvers && approvers.length > 0 ? approvers[0] : null;
+    if (!approver || approver.role !== 'parent') {
       return res.status(403).json({
         success: false,
         error: 'Access Denied: Only Parent Managers are authorized to reject fund allocations.'
       });
     }
 
-    // Find the request
-    let request = dbState.allocation_requests.find(r => r.id === requestId || r.request_id === requestId);
-    if (!request) {
-      const notif = dbState.notifications.find(n => n.id === requestId || n.notification_id === requestId);
-      if (notif && notif.request_id) {
-        request = dbState.allocation_requests.find(r => r.id === notif.request_id);
-      }
-    }
-
-    if (!request) {
+    // Find the request/expense in MySQL
+    const expenses = await db.query('SELECT * FROM expenses WHERE id = ? LIMIT 1', [requestId]);
+    if (!expenses || expenses.length === 0) {
       return res.status(404).json({ success: false, error: 'Allocation request not found.' });
     }
+    const request = expenses[0];
 
-    request.status = 'rejected';
-    request.decided_at = new Date().toISOString();
-    request.decision_by_user_id = parentUserId;
+    // Update status to rejected
+    await db.query('UPDATE expenses SET status = "rejected" WHERE id = ?', [requestId]);
 
-    // Update staged expense if present
-    const stagedExpense = dbState.expenses.find(e => e.request_id === request.id);
-    if (stagedExpense) {
-      stagedExpense.status = 'rejected';
-    }
-
-    // Record rejection in approvals ledger
-    dbState.approvals.push({
-      id: dbState.approvals.length + 1,
-      expense_id: stagedExpense ? stagedExpense.id : null,
-      approved_by_user_id: parentUserId,
-      status: 'rejected',
-      decision_note: reason || `Allocation request of ₦${Number(request.amount).toLocaleString()} declined.`,
-      decided_at: new Date().toISOString()
-    });
-
-    // Update all matching parent notifications to 'rejected'
-    dbState.notifications.forEach(n => {
-      if (n.request_id === request.id) {
-        n.status = 'rejected';
-        n.is_read = true;
-      }
-    });
+    // Record in ledger approvals table
+    await db.query(
+      'INSERT INTO approvals (expense_id, approved_by_user_id, status, decision_note, decided_at) VALUES (?, ?, "rejected", ?, NOW())',
+      [requestId, parentUserId, reason || `Allocation request of ₦${Number(request.amount).toLocaleString()} declined.`]
+    );
 
     // Route real-time notification alert to Child
-    const childUser = dbState.users.find(u => u.user_id === Number(request.child_id));
-    const childNotifId = dbState.notifications.length + 1;
-    const rejectorName = rejector ? `${rejector.first_name} ${rejector.last_name}` : 'Parent Admin';
-    const childMessage = `Your allocation request of ₦${Number(request.amount).toLocaleString()} for ${request.bowl_name} was declined by ${rejectorName}.`;
+    const approverName = `${approver.first_name} ${approver.last_name || ''}`.trim() || 'Parent Admin';
+    const childMessage = `Your allocation request of ₦${Number(request.amount).toLocaleString()} was declined by ${approverName}.`;
 
-    dbState.notifications.push({
-      id: childNotifId,
-      notification_id: childNotifId,
-      family_id: request.family_id,
-      user_id: request.child_id,
-      type: 'allocation_rejected',
-      message: childMessage,
-      request_id: request.id,
-      amount: request.amount,
-      bowl_name: request.bowl_name,
-      status: 'rejected',
-      is_read: false,
-      sent_at: new Date().toISOString()
-    });
-
-    // Async SMTP notification to child
-    if (childUser?.email) {
-      sendEmail({
-        to: childUser.email,
-        subject: `❌ Allocation Declined: ₦${Number(request.amount).toLocaleString()} for ${request.bowl_name}`,
-        text: childMessage,
-        html: `<p><strong>${childMessage}</strong></p><p>Please consult your family parent managers for details.</p>`
-      }).catch(() => {});
-    }
+    await db.query(
+      'INSERT INTO notifications (family_id, user_id, message, type, is_read) VALUES (?, ?, ?, "allocation_rejected", 0)',
+      [request.family_id, request.requested_by_user_id, childMessage]
+    );
 
     return res.json({
       success: true,
       message: `Allocation request of ₦${Number(request.amount).toLocaleString()} rejected.`,
-      data: request
+      data: { id: requestId, status: 'rejected' }
     });
   } catch (error) {
     console.error('Error rejecting allocation:', error);
@@ -403,10 +294,16 @@ async function rejectAllocation(req, res) {
 async function directAllocate(req, res) {
   try {
     const { user_id, bowl_id, amount, purpose, family_id } = req.body;
-    const parentUserId = Number(user_id || 1);
+    const parentUserId = Number(user_id);
     const numAmount = parseFloat(amount);
 
-    const user = dbState.users.find(u => u.user_id === parentUserId);
+    if (!parentUserId) {
+      return res.status(400).json({ success: false, error: 'Parent user ID required.' });
+    }
+
+    const approvers = await db.query('SELECT * FROM users WHERE id = ? LIMIT 1', [parentUserId]);
+    const user = approvers && approvers.length > 0 ? approvers[0] : null;
+
     if (!user || user.role !== 'parent') {
       return res.status(403).json({
         success: false,
@@ -418,48 +315,54 @@ async function directAllocate(req, res) {
       return res.status(400).json({ success: false, error: 'Please enter a valid allocation amount (₦).' });
     }
 
-    const effectiveFamilyId = Number(family_id || user.family_id || 1);
-    const family = dbState.families.find(f => f.family_id === effectiveFamilyId) || dbState.families[0];
+    const effectiveFamilyId = Number(family_id || user.family_id);
+    const famRows = await db.query('SELECT * FROM families WHERE id = ? LIMIT 1', [effectiveFamilyId]);
+    if (!famRows || famRows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Family not found.' });
+    }
+    const family = famRows[0];
+    const totalPot = Number(family.total_pot_balance || 0);
 
-    if ((family.total_pot_balance || 0) < numAmount) {
+    if (totalPot < numAmount) {
       return res.status(400).json({
         success: false,
-        error: `Insufficient funds in family pot! Available balance is ₦${(family.total_pot_balance || 0).toLocaleString()}`
+        error: `Insufficient funds in family pot! Available balance is ₦${totalPot.toLocaleString()}`
       });
     }
 
     // Deduct pot balance
-    family.total_pot_balance -= numAmount;
+    await db.query('UPDATE families SET total_pot_balance = total_pot_balance - ? WHERE id = ?', [numAmount, effectiveFamilyId]);
 
-    // Update bowl
-    const bowl = dbState.bowls.find(b => b.id === Number(bowl_id));
-    if (bowl) {
-      bowl.spent_amount = (bowl.spent_amount || 0) + numAmount;
+    // Update bowl spent amount
+    if (bowl_id) {
+      await db.query('UPDATE bowls SET spent_amount = spent_amount + ? WHERE id = ?', [numAmount, Number(bowl_id)]);
     }
 
-    // Add expense record
-    const newExpense = {
-      id: dbState.expenses.length + 1,
-      expense_id: dbState.expenses.length + 1,
-      family_id: effectiveFamilyId,
-      bowl_id: bowl?.id || 1,
-      requested_by_user_id: user.user_id,
-      user_id: user.user_id,
-      amount: numAmount,
-      description: purpose || `Parent Allocation for ${bowl?.category_name || 'Household'}`,
-      status: 'approved',
-      is_emergency: false,
-      date_spent: new Date().toISOString().split('T')[0],
-      created_at: new Date().toISOString()
-    };
-    dbState.expenses.push(newExpense);
+    // Add approved expense record
+    const expInsert = await db.query(
+      'INSERT INTO expenses (family_id, bowl_id, requested_by_user_id, amount, description, status, is_emergency) VALUES (?, ?, ?, ?, ?, "approved", 0)',
+      [effectiveFamilyId, Number(bowl_id || 1), user.id, numAmount, purpose || 'Parent Direct Allocation']
+    );
+    const expenseId = expInsert?.insertId || Date.now();
+
+    // Record in approvals
+    await db.query(
+      'INSERT INTO approvals (expense_id, approved_by_user_id, status, decision_note, decided_at) VALUES (?, ?, "approved", ?, NOW())',
+      [expenseId, user.id, purpose || 'Direct Parent Allocation']
+    );
 
     return res.json({
       success: true,
       message: `₦${numAmount.toLocaleString()} allocated successfully from Family Pot.`,
       data: {
-        total_pot_balance: family.total_pot_balance,
-        expense: newExpense
+        total_pot_balance: totalPot - numAmount,
+        expense: {
+          id: expenseId,
+          family_id: effectiveFamilyId,
+          amount: numAmount,
+          description: purpose || 'Parent Direct Allocation',
+          status: 'approved'
+        }
       }
     });
   } catch (error) {
@@ -472,26 +375,50 @@ async function directAllocate(req, res) {
  * 5. Get Allocation Requests
  * GET /api/allocations/requests
  */
-function getAllocationRequests(req, res) {
-  const familyId = Number(req.query.family_id || 1);
-  const requests = (dbState.allocation_requests || []).filter(r => r.family_id === familyId);
-  return res.json({ success: true, data: requests });
+async function getAllocationRequests(req, res) {
+  try {
+    const familyId = Number(req.query.family_id);
+    if (!familyId) {
+      return res.json({ success: true, data: [] });
+    }
+    const requests = await db.query(
+      'SELECT e.id, e.id AS request_id, e.family_id, e.requested_by_user_id AS child_id, e.amount, e.description, e.status, e.created_at, b.category_name AS bowl_name, u.first_name, u.last_name, CONCAT(u.first_name, " ", u.last_name) AS child_name FROM expenses e LEFT JOIN bowls b ON e.bowl_id = b.id LEFT JOIN users u ON e.requested_by_user_id = u.id WHERE e.family_id = ? AND e.status = "pending" ORDER BY e.id DESC',
+      [familyId]
+    );
+    return res.json({ success: true, data: requests || [] });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
 }
 
 /**
- * 6. Get All Allocations
+ * 6. Get All Allocations & Expenses
  * GET /api/allocations
  */
-function getAllocations(req, res) {
-  const familyId = Number(req.query.family_id || 1);
-  const requests = (dbState.allocation_requests || []).filter(r => r.family_id === familyId);
-  return res.json({
-    success: true,
-    data: {
-      requests,
-      expenses: (dbState.expenses || []).filter(e => e.family_id === familyId)
+async function getAllocations(req, res) {
+  try {
+    const familyId = Number(req.query.family_id);
+    if (!familyId) {
+      return res.json({ success: true, data: { requests: [], expenses: [] } });
     }
-  });
+    const requests = await db.query(
+      'SELECT e.*, b.category_name AS bowl_name FROM expenses e LEFT JOIN bowls b ON e.bowl_id = b.id WHERE e.family_id = ? AND e.status = "pending" ORDER BY e.id DESC',
+      [familyId]
+    );
+    const expenses = await db.query(
+      'SELECT e.*, b.category_name AS bowl_name FROM expenses e LEFT JOIN bowls b ON e.bowl_id = b.id WHERE e.family_id = ? ORDER BY e.id DESC',
+      [familyId]
+    );
+    return res.json({
+      success: true,
+      data: {
+        requests: requests || [],
+        expenses: expenses || []
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
 }
 
 module.exports = {
